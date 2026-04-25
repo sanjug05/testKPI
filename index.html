@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>KPI Control Tower | Enterprise Edition v6.5</title>
+  <title>KPI Control Tower | Enterprise Edition v6.4</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
@@ -483,7 +483,7 @@ function getFYLabel(){const now=new Date(),cal=now.getMonth(),yr=now.getFullYear
 function getProgressColor(pct){if(pct<60)return"red";if(pct<90)return"amber";return"green";}
 function getDisplayName(email){if(!email)return"Unknown";const parts=email.split('@')[0].split('.');return parts.map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(' ');}
 
-// normalizeTimestamp helper — handles Firestore {seconds}, ISO string, Date
+// Fix #2 & #3: normalizeTimestamp helper — handles Firestore {seconds}, ISO string, Date
 function normalizeTimestamp(ts) {
  if (!ts) return null;
  if (ts && typeof ts === 'object' && ts.seconds !== undefined) {
@@ -512,25 +512,26 @@ const DEFAULT_KPI_CATEGORIES = {
 };
 
 let kpiCategories = null;
+let kpiOwners = null;
 let categoriesLoaded = false;
+let ownersLoaded = false;
 
-// FIX #8: Added owner and ownerEmail fields to all 12 KPI_DEFINITIONS entries as fallback defaults
 const KPI_DEFINITIONS = [
- { id:"showroom_audit_count", name:"Showroom Audit Count", yearlyPlan:504, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com" },
- { id:"showroom_addition", name:"Showroom Addition", yearlyPlan:120, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com" },
- { id:"partner_addition", name:"Partner Addition", yearlyPlan:80, unit:"count", owner:"Krishna Verma", ownerEmail:"krishna.verma@aisglass.com" },
- { id:"cad_completion", name:"CAD Completion", yearlyPlan:240, unit:"count", owner:"Nidhi Tiwari", ownerEmail:"nidhi.tiwari@aisglass.com" },
- { id:"cad_tat", name:"CAD TAT (Days)", yearlyPlan:0, unit:"days", isTat:true, idealDays:4, owner:"Nidhi Tiwari", ownerEmail:"nidhi.tiwari@aisglass.com" },
- { id:"partner_survey_count", name:"Partner Survey Count", yearlyPlan:420, unit:"count", owner:"Krishna Verma", ownerEmail:"krishna.verma@aisglass.com" },
- { id:"rr_total", name:"R&R (Rewards People)", yearlyPlan:600, unit:"people", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com" },
- { id:"first_time_calls", name:"Interested", yearlyPlan:2160, unit:"calls", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com" },
- { id:"shortlisted", name:"Shortlisted", yearlyPlan:780, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com" },
- { id:"cft_done", name:"CFT Done", yearlyPlan:576, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com" },
- { id:"cft_feedback_adherence", name:"CFT Feedback Adherence", yearlyPlan:100, unit:"%", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com" },
- { id:"collection", name:"Collection (CRM/CSE/Branding)", yearlyPlan:1500, unit:"lakhs", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com" }
+ { id:"showroom_audit_count", name:"Showroom Audit Count", yearlyPlan:504, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"operations" },
+ { id:"showroom_addition", name:"Showroom Addition", yearlyPlan:120, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"sales" },
+ { id:"partner_addition", name:"Partner Addition", yearlyPlan:80, unit:"count", owner:"Krishna Verma", ownerEmail:"krishna.verma@aisglass.com", category:"sales" },
+ { id:"cad_completion", name:"CAD Completion", yearlyPlan:240, unit:"count", owner:"Nidhi Tiwari", ownerEmail:"nidhi.tiwari@aisglass.com", category:"operations" },
+ { id:"cad_tat", name:"CAD TAT (Days)", yearlyPlan:0, unit:"days", isTat:true, idealDays:4, owner:"Nidhi Tiwari", ownerEmail:"nidhi.tiwari@aisglass.com", category:"quality" },
+ { id:"partner_survey_count", name:"Partner Survey Count", yearlyPlan:420, unit:"count", owner:"Krishna Verma", ownerEmail:"krishna.verma@aisglass.com", category:"quality" },
+ { id:"rr_total", name:"R&R (Rewards People)", yearlyPlan:600, unit:"people", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com", category:"finance" },
+ { id:"first_time_calls", name:"Interested", yearlyPlan:2160, unit:"calls", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"sales" },
+ { id:"shortlisted", name:"Shortlisted", yearlyPlan:780, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"sales" },
+ { id:"cft_done", name:"CFT Done", yearlyPlan:576, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"operations" },
+ { id:"cft_feedback_adherence", name:"CFT Feedback Adherence", yearlyPlan:100, unit:"%", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com", category:"quality" },
+ { id:"collection", name:"Collection (CRM/CSE/Branding)", yearlyPlan:1500, unit:"lakhs", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com", category:"finance" }
 ];
 
-// FIX #4: safeRender — only renders when kpiData has content
+// Fix #4: safeRender — only renders when kpiData has content
 function safeRender() {
  if (!kpiData || kpiData.length === 0) return;
  if (currentView === 'dashboardView') renderDashboard();
@@ -539,21 +540,30 @@ function safeRender() {
  populateKpiFilter();
 }
 
-// FIX #7: initDynamicDataListeners only sets up categories listener (owners listener removed)
 function initDynamicDataListeners() {
- const catQuery = query(collection(db, "kpi_categories"));
+ const catQuery = query(collection(db, "categories"));
  onSnapshot(catQuery, (snapshot) => {
    if (!snapshot.empty) {
      const fetchedCategories = {};
      snapshot.forEach(doc => {
        const data = doc.data();
-       fetchedCategories[doc.id] = {
+       fetchedCategories[data.id || doc.id] = {
          name: data.name || doc.id,
-         icon: data.icon || "fa-circle",
+         icon: "fa-circle",
          color: data.color || "var(--text3)",
-         ids: Array.isArray(data.ids) ? data.ids.map(id => String(id)) : []
+         ids: []
        };
      });
+     // Populate ids from kpiData based on category field
+     if (kpiData && kpiData.length > 0) {
+       kpiData.forEach(kpi => {
+         if (kpi.category && fetchedCategories[kpi.category]) {
+           if (!fetchedCategories[kpi.category].ids.includes(kpi.id)) {
+             fetchedCategories[kpi.category].ids.push(kpi.id);
+           }
+         }
+       });
+     }
      kpiCategories = { ...DEFAULT_KPI_CATEGORIES, ...fetchedCategories };
    } else {
      kpiCategories = { ...DEFAULT_KPI_CATEGORIES };
@@ -565,24 +575,44 @@ function initDynamicDataListeners() {
    categoriesLoaded = true;
    safeRender();
  });
- // FIX #3: Removed the entire kpi_owners onSnapshot listener
+} // ← CLOSE initDynamicDataListeners HERE
+
+// These are standalone functions (not inside initDynamicDataListeners):
+async function loadOwnersFromUsersCollection() {
+ try {
+   const usersSnap = await getDocs(query(collection(db, "users")));
+   if (!usersSnap.empty) {
+     const owners = {};
+     usersSnap.forEach(doc => {
+       const data = doc.data();
+       const email = data.email || doc.id;
+       const name = data.displayName || getDisplayName(email);
+       owners[doc.id] = { name, email };
+     });
+     kpiOwners = owners;
+   } else {
+     kpiOwners = buildDefaultOwnersMap();
+   }
+ } catch (e) {
+   kpiOwners = buildDefaultOwnersMap();
+ }
+ ownersLoaded = true;
+ safeRender();
 }
 
-// FIX #1: getKpiOwner reads directly from kpiData array, with KPI_DEFINITIONS fallback
+function buildDefaultOwnersMap() {
+ const owners = {};
+ KPI_DEFINITIONS.forEach(def => { owners[def.id] = { name: "Unassigned", email: "" }; });
+ return owners;
+}
+
 function getKpiOwner(kpiId) {
- // First, try to find the KPI in the live kpiData array (Firestore docs)
- if (kpiData && kpiData.length > 0) {
-   const kpi = kpiData.find(k => k.id === kpiId);
-   if (kpi && kpi.owner) {
-     return { name: kpi.owner, email: kpi.ownerEmail || '' };
-   }
- }
- // Fallback to KPI_DEFINITIONS hardcoded values
- const def = KPI_DEFINITIONS.find(d => d.id === kpiId);
- if (def && def.owner) {
-   return { name: def.owner, email: def.ownerEmail || '' };
- }
- return { name: "Unassigned", email: "" };
+  const kpi = kpiData.find(k => k.id === kpiId);
+  if (kpi && kpi.owner) {
+    return { name: kpi.owner, email: kpi.ownerEmail || '' };
+  }
+  const def = KPI_DEFINITIONS.find(d => d.id === kpiId);
+  return { name: def?.owner || "Unassigned", email: def?.ownerEmail || "" };
 }
 
 function resolveCategoryKeyFromKpi(kpi, cats){
@@ -612,12 +642,13 @@ let barChart,horizChart,trendChartInstance,catGapChart,perfMixChart,trendLineCha
 let currentSort="default",currentKpiFilter="all",currentSearchTerm="",currentMonth=getFinancialMonth();
 let currentModalKpiId=null,currentCommentMonth=null,realtimeUnsub=null,auditUnsub=null,commentsUnsub=null;
 let isAdmin=false,groupByCategory=false;
+// Fix #24: Scoped pinnedKpis key to current user (set after login)
 let pinnedKpis=[];
 let notifications=[],previousKpiState=[],currentView="dashboardView";
 let isModalDirty=false,originalModalValues=new Map();
 let chatMessages=[],suggestionMessages=[],chatUnread=0,suggestUnread=0,chatUnsub=null,suggestUnsub=null,activePanel=null;
 
-// Track already-notified KPI+status to avoid duplicates
+// Fix #12: Track already-notified KPI+status to avoid duplicates
 const notifiedStates = new Map();
 
 function getPinnedKey() { return currentUserId ? `pinnedKpis_${currentUserId}` : 'pinnedKpis'; }
@@ -649,7 +680,7 @@ function buildThemePicker(){
  grid.innerHTML=THEME_COLORS.map(c=>`<div class="theme-color-opt ${saved.color===c.color?'active':''}" style="background:${c.color};" data-color='${JSON.stringify(c).replace(/'/g,"&#39;")}' title="${c.name}"></div>`).join('');
  grid.querySelectorAll('.theme-color-opt').forEach(el=>{el.addEventListener('click',()=>{applyThemeColor(JSON.parse(el.getAttribute('data-color')));buildThemePicker();});});
 }
-
+// Fix #16 & #17: Chat with normalizeTimestamp, char counter
 function initChatListener(){if(chatUnsub)chatUnsub();const q=query(collection(db,"team_chats"),orderBy("timestamp","asc"),limit(200));chatUnsub=onSnapshot(q,(snap)=>{chatMessages=snap.docs.map(d=>({id:d.id,...d.data()}));renderChatMessages();});}
 
 function renderChatMessages(){
@@ -666,6 +697,7 @@ function buildChatBubble(m){
  return`<div class="chat-msg ${isSelf?'self':'other'} ${m.pinned?'pinned':''}"><div class="chat-msg-header"><span class="chat-msg-sender">${esc(getDisplayName(m.senderEmail))}</span><span class="chat-msg-time">${timeStr}</span></div><div class="chat-msg-text">${esc(m.text)}</div>${isSelf||isAdmin?`<button class="chat-pin-btn ${m.pinned?'active':''}" data-id="${m.id}" data-pinned="${m.pinned}"><i class="fas fa-thumbtack"></i></button>`:''}</div>`;
 }
 
+// Fix #25: Optimistic rollback for sendChatMessage
 async function sendChatMessage(){
  const input=document.getElementById('chatInput');
  const text=input.value.trim();
@@ -681,6 +713,7 @@ async function sendChatMessage(){
  }
 }
 
+// Fix #11: Fix cp boolean parsing in togglePinMessage
 async function togglePinMessage(msgId, cp){
  const pinned = cp === true || cp === 'true';
  try{await updateDoc(doc(db,"team_chats",msgId),{pinned:!pinned});}
@@ -690,6 +723,7 @@ async function togglePinMessage(msgId, cp){
 function openChatPanel(){closeAllPanels();activePanel='chat';document.getElementById('chatPanel').classList.add('open');chatUnread=0;updateChatBadge();}
 function closeChatPanel(){document.getElementById('chatPanel').classList.remove('open');activePanel=null;}
 
+// Fix #16: use normalizeTimestamp for suggestions
 function initSuggestListener(){if(suggestUnsub)suggestUnsub();const q=query(collection(db,"team_suggestions"),orderBy("timestamp","asc"),limit(100));suggestUnsub=onSnapshot(q,(snap)=>{suggestionMessages=snap.docs.map(d=>({id:d.id,...d.data()}));renderSuggestMessages();});}
 
 function renderSuggestMessages(){
@@ -699,6 +733,7 @@ function renderSuggestMessages(){
  c.scrollTop=c.scrollHeight;
 }
 
+// Fix #25: Optimistic rollback for sendSuggestion
 async function sendSuggestion(){
  const input=document.getElementById('suggestInput');
  const text=input.value.trim();
@@ -720,6 +755,7 @@ function closeAllPanels(){document.getElementById('chatPanel').classList.remove(
 function updateChatBadge(){const b=document.getElementById('navBadgeChat');b.textContent=chatUnread;b.style.display=chatUnread>0?'inline':'none';}
 function updateSuggestBadge(){const b=document.getElementById('navBadgeSuggest');b.textContent=suggestUnread;b.style.display=suggestUnread>0?'inline':'none';}
 
+// Fix #17: Character counter updates
 function updateChatCharCounter(){
  const input=document.getElementById('chatInput');
  const counter=document.getElementById('chatCharCounter');
@@ -737,6 +773,7 @@ function pct(n){return fmt(n)+"%";}
 function showToast(msg,type="info"){const c=document.getElementById("toastContainer"),t=document.createElement("div");t.className="toast";t.style.borderLeft=`4px solid ${type==='success'?'#2b9e5c':type==='error'?'#dc5a3c':'#1f6392'}`;t.innerHTML=`<i class="fas fa-${type==='success'?'check-circle':type==='error'?'exclamation-triangle':'info-circle'}"></i> ${msg}`;c.appendChild(t);setTimeout(()=>t.remove(),3400);}
 function parseFirebaseError(e,f){const m={"auth/invalid-credential":"Invalid email or password.","permission-denied":"Access denied."};return m[e?.code]||f;}
 
+// Fix #22: Update document.title dynamically in switchView
 function switchView(viewId){
  document.querySelectorAll('.view-container').forEach(v=>v.classList.remove('active'));const view=document.getElementById(viewId);if(view)view.classList.add('active');
  currentView=viewId;setActiveNav(viewId);
@@ -753,6 +790,7 @@ function switchView(viewId){
 
 function setActiveNav(viewId){document.querySelectorAll('.nav-item[data-view]').forEach(n=>n.classList.remove('active'));const nav=document.querySelector(`.nav-item[data-view="${viewId}"]`);if(nav)nav.classList.add('active');}
 
+// Fix #8: Mobile sidebar toggle
 function openMobileSidebar(){document.getElementById('sidebar').classList.add('mobile-open');document.getElementById('sidebarOverlay').classList.add('active');}
 function closeMobileSidebar(){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebarOverlay').classList.remove('active');}
 function toggleMobileSidebar(){const s=document.getElementById('sidebar');if(s.classList.contains('mobile-open'))closeMobileSidebar();else openMobileSidebar();}
@@ -776,6 +814,7 @@ function markAllNotificationsRead(){notifications.forEach(n=>n.read=true);render
 function clearAllNotifications(){notifications=[];renderNotifications();updateNotifBadge();}
 function renderNotifications(){const l=document.getElementById('notifList');if(!l)return;if(!notifications.length){l.innerHTML='<div class="notif-empty">No notifications</div>';return;}l.innerHTML=notifications.slice(0,30).map(n=>{const ic=n.type==='critical'?'crit':n.type==='warning'?'warn':'ok',ii=n.type==='critical'?'fa-circle-exclamation':n.type==='warning'?'fa-triangle-exclamation':'fa-circle-check';return`<div class="notif-item ${n.read?'':'unread'}"><div class="notif-item-icon ${ic}"><i class="fas ${ii}"></i></div><div><div style="font-weight:600;font-size:0.72rem;">${esc(n.title)}</div><div style="font-size:0.66rem;color:var(--text3);">${esc(n.desc)}</div><div style="font-size:0.58rem;color:var(--text3);">${new Date(n.createdAt).toLocaleString('en-IN')}</div></div></div>`;}).join('');}
 
+// Fix #12: Use notifiedStates map to avoid duplicate notifications
 function checkAndNotify(){
  const enriched=getEnrichedKpis();
  const prevMap={};previousKpiState.forEach(k=>{prevMap[k.id]=k;});
@@ -804,6 +843,7 @@ function checkAndNotify(){
  previousKpiState=JSON.parse(JSON.stringify(enriched));
 }
 
+// Fix #10: Use ?? 0 instead of || 0 for anomaly detection
 function detectAnomalies(){
  const a=[],enriched=getEnrichedKpis();
  enriched.forEach(k=>{
@@ -884,6 +924,7 @@ function initAuditListener(){
  auditUnsub=onSnapshot(q,(snap)=>{
    const fl=snap.docs.map(d=>({id:d.id,...d.data()}));
    const ll=JSON.parse(localStorage.getItem("kpi_audit_local")||"[]");
+   // Fix #9: Deduplicate by id
    const firestoreIds = new Set(fl.map(l => l.id).filter(Boolean));
    const filteredLocal = ll.filter(l => !l.id || !firestoreIds.has(l.id));
    allAuditLogs=[...filteredLocal,...fl].sort((a,b)=>{
@@ -896,6 +937,7 @@ function initAuditListener(){
  });
 }
 
+// Fix #2 & #3: Use normalizeTimestamp for date filter AND display
 function renderAuditTable(){
  const kf=document.getElementById("auditKpiFilter")?.value||"all";
  const uf=document.getElementById("auditUserFilter")?.value||"all";
@@ -941,6 +983,7 @@ function renderCommentsInModal(){
  container.innerHTML=kc.map(c=>`<div class="comment-item" style="background:#f6fdf8;border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:0.74rem;"><div class="comment-meta" style="display:flex;justify-content:space-between;font-size:0.62rem;color:var(--text3);"><strong>${esc(getDisplayName(c.userEmail))}</strong> ${formatTimestamp(c.timestamp)}</div><div style="color:var(--text);">${esc(c.text)}</div></div>`).join("");
 }
 
+// Fix #6: Month lock — properly handle April (month 0) at start of FY
 async function updateKpiMonthly(kpiId,mi,value){
  if(!isAdmin){showToast("Viewer mode","error");return;}
  const cfm=getFinancialMonth();
@@ -967,6 +1010,7 @@ async function renderAnalytics(){await renderCharts();renderDelayBuckets();rende
 
 function updateNavBadges(){const red=getEnrichedKpis().filter(k=>k.metrics.status==='red').length,nb=document.getElementById('navBadgeRed');if(nb){nb.textContent=red;nb.style.display=red>0?'inline':'none';}}
 
+// Fix #7: Skip empty category sections; Fix #19: remove loading skeleton
 function renderKpiCards(){
  const container=document.getElementById("kpiCardsContainer");
  if(!container)return;
@@ -988,6 +1032,7 @@ function renderKpiCards(){
      const c=cats[key];
      const catDef = (kpiCategories || DEFAULT_KPI_CATEGORIES)[key];
      if(!catDef) return;
+     // Fix #7: Skip categories with zero KPIs
      if(!c || c.entities.length === 0) return;
      const aa=Math.round(c.entities.reduce((s,k)=>s+k.metrics.yearlyPct,0)/c.entities.length);
      html+=`<div class="kpi-category-section"><div class="kpi-category-header" style="--cat-color:${catDef.color};"><div><i class="fas ${catDef.icon}"></i> <strong>${catDef.name}</strong> <span style="font-size:0.68rem;color:var(--text3);">${c.entities.length} KPIs · Avg ${pct(aa)}</span></div></div><div class="kpi-category-body">${c.entities.map(k=>buildKpiCard(k)).join('')}</div></div>`;
@@ -1049,9 +1094,8 @@ function renderOwnerLeaderboard(){
  document.getElementById("ownerLeaderboard").innerHTML=ranked.map((r,i)=>`<div class="leaderboard-item"><div class="leaderboard-rank ${i===0?'gold':i===1?'silver':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</div><div class="leaderboard-name">${esc(r.owner)} <span style="font-size:0.62rem;color:var(--text3);">(${r.count})</span></div><div class="leaderboard-bar-wrap"><div class="leaderboard-bar"><div class="leaderboard-bar-fill" style="width:${Math.round((r.avg/maxAvg)*100)}%;"></div></div></div><div class="leaderboard-value">${pct(Math.round(r.avg))}</div></div>`).join('');
 }
 
-async function renderCharts(){
- await ensureChartJs();
- const enriched=getEnrichedKpis();const labels=enriched.map(k=>k.name.length>18?k.name.slice(0,16)+"…":k.name);
+// Fix #13: Fix phantom doughnut slices when all KPIs are one status
+async function renderCharts(){await ensureChartJs();const enriched=getEnrichedKpis();const labels=enriched.map(k=>k.name.length>18?k.name.slice(0,16)+"…":k.name);
  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
  const themeColor=getComputedStyle(document.documentElement).getPropertyValue('--blue').trim()||'#0D5E3A';
  const ctxBar=document.getElementById("barPlanActualChart")?.getContext("2d");if(ctxBar){if(barChart)barChart.destroy();barChart=new Chart(ctxBar,{type:"bar",data:{labels,datasets:[{label:"Plan",data:enriched.map(k=>k.yearlyPlan),backgroundColor:"#c5d9ec",borderRadius:6},{label:"Actual",data:enriched.map(k=>k.metrics.yearlyActual),backgroundColor:themeColor,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"top"}}}});}
@@ -1061,7 +1105,7 @@ async function renderCharts(){
  catOrder.forEach(key=>{
    const catDef = (kpiCategories || DEFAULT_KPI_CATEGORIES)[key];
    if(!catDef) return;
-   const ck=enriched.filter(k=>getKpiCategory(k).key===key);
+  const ck=enriched.filter(k=>getKpiCategory(k).key===key);
    if(ck.length===0)return;
    const tp=ck.reduce((s,k)=>s+k.yearlyPlan,0),ta=ck.reduce((s,k)=>s+k.metrics.yearlyActual,0);
    cgd.push({category:catDef.name,plan:tp,actual:ta});
@@ -1087,6 +1131,7 @@ async function renderCharts(){
 
 function downloadChart(chartId,filename){const canvas=document.querySelector(`#${chartId}`);if(!canvas){showToast("Chart not found","error");return;}const link=document.createElement("a");link.download=`${filename}.png`;link.href=canvas.toDataURL("image/png");link.click();showToast("Downloaded","success");}
 
+// Fix #21: Lazy-load heavy scripts on demand
 async function ensureHtml2canvas() {
  if(window.html2canvas)return;
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
@@ -1112,6 +1157,7 @@ async function ensureSheetJS() {
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
 }
 
+// Fix #14: Guard exports when no data
 async function exportToPDF(){
  if(!kpiData.length){showToast("No data to export","error");return;}
  showToast("Generating PDF...","info");
@@ -1122,6 +1168,7 @@ async function exportToPDF(){
  try{const canvas=await html2canvas(el,{scale:2,useCORS:true,logging:false,windowWidth:el.scrollWidth});const imgData=canvas.toDataURL("image/png");const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});const iw=280,ih=(canvas.height*iw)/canvas.width;let hl=ih,pos=0,pn=1;pdf.addImage(imgData,'PNG',10,pos,iw,ih);hl-=(pdf.internal.pageSize.getHeight()-20);while(hl>0){pos=hl-ih;pdf.addPage();pdf.addImage(imgData,'PNG',10,pos,iw,ih);pdf.setFontSize(9);pdf.setTextColor(148,163,184);pdf.text(`Page ${pn+1}`,pdf.internal.pageSize.getWidth()/2,pdf.internal.pageSize.getHeight()-8,{align:'center'});hl-=(pdf.internal.pageSize.getHeight()-20);pn++;}pdf.save(`KPI_Report_${getFYLabel()}_${new Date().toISOString().slice(0,10)}.pdf`);showToast(`PDF exported (${pn} pages)`,"success");}catch(e){showToast("PDF failed","error");}
 }
 
+// Fix #14: Guard export; Fix #21: lazy load SheetJS
 async function exportToExcel(){
  if(!kpiData.length){showToast("No data to export","error");return;}
  await ensureSheetJS();
@@ -1137,9 +1184,10 @@ async function exportToExcel(){
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([header,...rows]),"KPI Summary");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ms),"Monthly Actuals");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cr),"Category Analysis");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(or),"Owner Scorecard");XLSX.writeFile(wb,`KPI_${getFYLabel().replace(/\s/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`);showToast("Excel exported (4 sheets)","success");
 }
 
+// Fix #14: Guard backup
 function backupData(){
  if(!kpiData.length){showToast("No data to backup","error");return;}
- try{const b={kpiData,allAuditLogs,exportedAt:new Date().toISOString(),version:'6.5'};const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(b,null,2)],{type:'application/json'})),download:`kpi_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`});a.click();showToast('Backup downloaded','success');}catch(e){showToast('Backup failed','error');}
+ try{const b={kpiData,allAuditLogs,exportedAt:new Date().toISOString(),version:'6.4'};const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(b,null,2)],{type:'application/json'})),download:`kpi_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`});a.click();showToast('Backup downloaded','success');}catch(e){showToast('Backup failed','error');}
 }
 
 function openKpiDetailModal(kpiId){
@@ -1189,6 +1237,7 @@ function populateMonthSelect(){
  if(sel2){sel2.addEventListener("change",(e)=>{const val=parseInt(e.target.value);if(val>getFinancialMonth()){e.target.value=currentMonth;return;}currentMonth=val;sel.value=val;renderDashboard();renderKpiUpdateView();saveFilterState();});}
 }
 
+// Fix #5: populateKpiFilter only populates dropdown options; event listeners attached once at init
 function populateKpiFilter(){
  const sel=document.getElementById("kpiSelectFilter");if(!sel)return;
  const sel2=document.getElementById("kpiSelectFilterKpi");const curr=sel.value;
@@ -1197,6 +1246,7 @@ function populateKpiFilter(){
  const as=document.getElementById("auditKpiFilter");if(as){const ac=as.value;as.innerHTML='<option value="all">All KPIs</option>'+kpiData.map(k=>`<option value="${k.id}" ${k.id===ac?"selected":""}>${esc(k.name)}</option>`).join("");}
 }
 
+// Fix #5: Attach filter change listeners exactly once
 function attachFilterListeners(){
  const sel=document.getElementById("kpiSelectFilter");
  const sel2=document.getElementById("kpiSelectFilterKpi");
@@ -1210,7 +1260,6 @@ function attachFilterListeners(){
  }
 }
 
-// FIX #2: initKpiListener now syncs owner field from KPI_DEFINITIONS to Firestore when missing
 function initKpiListener(){
  if(realtimeUnsub)realtimeUnsub();
  realtimeUnsub=onSnapshot(collection(db,"kpis"),async(snapshot)=>{
@@ -1218,18 +1267,12 @@ function initKpiListener(){
    for(const def of KPI_DEFINITIONS){
      const ex=fetched.find(f=>f.id===def.id);
      if(!ex){
-       const nd={id:def.id,name:def.name,yearlyPlan:def.yearlyPlan,unit:def.unit,monthlyActuals:buildEmptyMonthlyActuals(),lastUpdated:serverTimestamp(),owner:def.owner||null,ownerEmail:def.ownerEmail||null};
+       const nd={id:def.id,name:def.name,yearlyPlan:def.yearlyPlan,unit:def.unit,monthlyActuals:buildEmptyMonthlyActuals(),lastUpdated:serverTimestamp(),owner:def.owner||'',ownerEmail:def.ownerEmail||'',category:def.category||'sales'};
        if(def.isTat)nd.isTat=true;
        if(def.idealDays)nd.idealDays=def.idealDays;
        try{await setDoc(doc(db,"kpis",def.id),nd);}catch(e){}
        fetched.push({...nd});
      } else {
-       // FIX #2: Sync owner if missing from Firestore but present in KPI_DEFINITIONS
-       if((!ex.owner || ex.owner === '') && def.owner) {
-         try{await updateDoc(doc(db,"kpis",def.id),{owner:def.owner,ownerEmail:def.ownerEmail||''});}catch(e){}
-         ex.owner = def.owner;
-         ex.ownerEmail = def.ownerEmail || '';
-       }
        if(ex.monthlyActuals){
          const m={...ex.monthlyActuals};let dirty=false;
          for(let i=0;i<12;i++){if(m[i]===undefined||m[i]===null){m[i]=0;dirty=true;}}
@@ -1249,10 +1292,12 @@ function initKpiListener(){
 async function handleLogin(){const email=document.getElementById("loginEmail").value.trim();const pwd=document.getElementById("loginPassword").value;const errEl=document.getElementById("loginError");if(errEl)errEl.style.display="none";if(!email||!pwd){if(errEl){errEl.textContent="Please enter your credentials.";errEl.style.display="block";}return;}try{await signInWithEmailAndPassword(auth,email,pwd);}catch(e){if(errEl){errEl.textContent=parseFirebaseError(e,"Login failed.");errEl.style.display="block";}}}
 async function handleLogout(){try{await signOut(auth);showToast("Logged out");}catch(e){showToast("Logout failed","error");}}
 
+// Fix: Custom confirm modal (replaces native confirm())
 let confirmResolver = null;
 function showConfirm(message, title = 'Please Confirm') {
   return new Promise(resolve => {
     confirmResolver = resolve;
+    // Reuse the existing commentModal for confirmations
     const modal = document.getElementById('commentModal');
     const textarea = document.getElementById('commentText');
     const saveBtn = document.getElementById('saveCommentBtn');
@@ -1290,7 +1335,6 @@ function resolveConfirm(result) {
   modal?.classList.remove('active');
   if(confirmResolver){confirmResolver(result);confirmResolver=null;}
 }
-
 onAuthStateChanged(auth,async user=>{
  if(user){
    currentUserId=user.uid;currentUserEmail=user.email;
