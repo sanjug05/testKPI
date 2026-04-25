@@ -547,9 +547,14 @@ function initDynamicDataListeners() {
      const fetchedCategories = {};
      snapshot.forEach(doc => {
        const data = doc.data();
-       fetchedCategories[doc.id] = { name: data.name || doc.id, icon: data.icon || "fa-circle", color: data.color || "var(--text3)", ids: data.ids || [] };
+       fetchedCategories[doc.id] = {
+         name: data.name || doc.id,
+         icon: data.icon || "fa-circle",
+         color: data.color || "var(--text3)",
+         ids: Array.isArray(data.ids) ? data.ids.map(id => String(id)) : []
+       };
      });
-     kpiCategories = fetchedCategories;
+     kpiCategories = { ...DEFAULT_KPI_CATEGORIES, ...fetchedCategories };
    } else {
      kpiCategories = { ...DEFAULT_KPI_CATEGORIES };
    }
@@ -614,8 +619,20 @@ function getKpiOwner(kpiId) {
  return { name: "Unassigned", email: "" };
 }
 
-function getKpiCategory(kpiId){
+function resolveCategoryKeyFromKpi(kpi, cats){
+ const rawKey = (kpi && (kpi.categoryKey || kpi.category || kpi.categoryId)) ? String(kpi.categoryKey || kpi.category || kpi.categoryId).trim() : '';
+ if(rawKey && cats[rawKey]) return rawKey;
+ return null;
+}
+
+function getKpiCategory(kpiOrId){
  const cats = kpiCategories || DEFAULT_KPI_CATEGORIES;
+ const kpi = (typeof kpiOrId === 'object' && kpiOrId !== null) ? kpiOrId : null;
+ const kpiId = kpi ? kpi.id : kpiOrId;
+
+ const directKey = resolveCategoryKeyFromKpi(kpi, cats);
+ if(directKey) return { key: directKey, ...cats[directKey] };
+
  for(const [key, cat] of Object.entries(cats)){
    if(cat.ids && cat.ids.includes(kpiId)) return { key, ...cat };
  }
@@ -1001,7 +1018,7 @@ function renderKpiCards(){
  if(groupByCategory){
    const cats={};
    enriched.forEach(k=>{
-     const cat=getKpiCategory(k.id);
+    const cat=getKpiCategory(k);
      if(!cats[cat.key])cats[cat.key]={...cat,entities:[]};
      cats[cat.key].entities.push(k);
    });
@@ -1085,7 +1102,7 @@ function renderCharts(){
  catOrder.forEach(key=>{
    const catDef = (kpiCategories || DEFAULT_KPI_CATEGORIES)[key];
    if(!catDef) return;
-   const ck=enriched.filter(k=>getKpiCategory(k.id).key===key);
+  const ck=enriched.filter(k=>getKpiCategory(k).key===key);
    if(ck.length===0)return;
    const tp=ck.reduce((s,k)=>s+k.yearlyPlan,0),ta=ck.reduce((s,k)=>s+k.metrics.yearlyActual,0);
    cgd.push({category:catDef.name,plan:tp,actual:ta});
@@ -1146,7 +1163,7 @@ async function exportToExcel(){
  const ms=[["KPI",...FY_MONTHS]];kpiData.forEach(k=>{const m=k.monthlyActuals||buildEmptyMonthlyActuals();ms.push([k.name,...FY_MONTHS.map((_,i)=>fmt(m[i]))]);});
  const cr=[["Category","KPIs","Total Plan","Total Actual","Avg Achievement %","Total Gap"]];
  const catOrder = kpiCategories ? Object.keys(kpiCategories) : ['sales','operations','quality','finance'];
- catOrder.forEach(key=>{const ck=enriched.filter(k=>getKpiCategory(k.id).key===key);if(!ck.length)return;const tp=ck.reduce((s,k)=>s+k.yearlyPlan,0),ta=ck.reduce((s,k)=>s+k.metrics.yearlyActual,0);cr.push([(kpiCategories||DEFAULT_KPI_CATEGORIES)[key]?.name||key,ck.length,fmt(tp),fmt(ta),pct(Math.round(tp>0?(ta/tp)*100:0)),fmt(tp-ta)]);});
+ catOrder.forEach(key=>{const ck=enriched.filter(k=>getKpiCategory(k).key===key);if(!ck.length)return;const tp=ck.reduce((s,k)=>s+k.yearlyPlan,0),ta=ck.reduce((s,k)=>s+k.metrics.yearlyActual,0);cr.push([(kpiCategories||DEFAULT_KPI_CATEGORIES)[key]?.name||key,ck.length,fmt(tp),fmt(ta),pct(Math.round(tp>0?(ta/tp)*100:0)),fmt(tp-ta)]);});
  const owners={};enriched.forEach(k=>{const o=getKpiOwner(k.id).name;if(!owners[o])owners[o]={kpis:[],ta:0};owners[o].kpis.push(k);owners[o].ta+=k.metrics.yearlyPct;});
  const or=[["Owner","KPI Count","Avg Achievement %","Green","Amber","Red"]];Object.entries(owners).forEach(([owner,data])=>{or.push([owner,data.kpis.length,pct(Math.round(data.ta/data.kpis.length)),data.kpis.filter(k=>k.metrics.status==='green').length,data.kpis.filter(k=>k.metrics.status==='amber').length,data.kpis.filter(k=>k.metrics.status==='red').length]);});
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([header,...rows]),"KPI Summary");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ms),"Monthly Actuals");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cr),"Category Analysis");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(or),"Owner Scorecard");XLSX.writeFile(wb,`KPI_${getFYLabel().replace(/\s/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`);showToast("Excel exported (4 sheets)","success");
