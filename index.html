@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>KPI Control Tower | Enterprise Edition v6.4</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -911,7 +911,14 @@ function loadFilterState(){const s=localStorage.getItem("kpi_filters_v6");if(!s)
 function syncKpiUpdateFilters(){const ms2=document.getElementById("monthSelectKpi");if(ms2)ms2.value=currentMonth;}
 
 function trackModalChanges(){isModalDirty=false;originalModalValues.clear();document.querySelectorAll('.monthly-edit-input:not([disabled])').forEach(inp=>{const m=inp.dataset.month;originalModalValues.set(m,inp.value);inp.addEventListener('input',()=>{isModalDirty=inp.value!==originalModalValues.get(m);});});}
-function closeModalWithCheck(){if(isModalDirty){if(confirm('Unsaved changes. Close?')){isModalDirty=false;document.getElementById("kpiModal")?.classList.remove("active");}}else{document.getElementById("kpiModal")?.classList.remove("active");}}
+async function closeModalWithCheck(){
+  if(isModalDirty){
+    const ok = await showConfirm('You have unsaved changes. Close anyway?', 'Unsaved Changes');
+    if(!ok) return;
+    isModalDirty = false;
+  }
+  document.getElementById("kpiModal")?.classList.remove("active");
+}
 
 async function logAudit(kpiId,kpiName,fc,ov,nv){if(!currentUserId)return;const r={kpiId,kpiName,fieldChanged:fc,oldValue:String(ov),newValue:String(nv),updatedBy:currentUserEmail||currentUserId,userId:currentUserId,timestamp:new Date().toISOString()};try{await addDoc(collection(db,"kpi_audit_logs"),{...r,updatedAt:serverTimestamp()});}catch(e){const k="kpi_audit_local",ex=JSON.parse(localStorage.getItem(k)||"[]");ex.unshift(r);localStorage.setItem(k,JSON.stringify(ex.slice(0,500)));allAuditLogs=[r,...allAuditLogs].slice(0,500);renderAuditTable();populateAuditUserFilter();}}
 
@@ -968,7 +975,7 @@ async function addComment(kpiId,month,text){
    document.getElementById("commentModal").classList.remove("active");
  }catch(e){showToast("Failed","error");}
 }
-async function deleteComment(cid){if(!confirm("Delete?"))return;try{await deleteDoc(doc(db,"kpi_comments",cid));showToast("Deleted","success");}catch(e){showToast("Failed","error");}}
+async function deleteComment(cid){const ok=await showConfirm('Delete this comment permanently?','Delete Comment');if(!ok)return;try{await deleteDoc(doc(db,"kpi_comments",cid));showToast("Deleted","success");}catch(e){showToast("Failed","error");}}
 function renderCommentsInModal(){
  const container=document.getElementById("commentsList");if(!container)return;
  const kc=allComments.filter(c=>c.kpiId===currentModalKpiId&&c.month===currentCommentMonth).sort((a,b)=>{
@@ -989,7 +996,7 @@ async function updateKpiMonthly(kpiId,mi,value){
  if(isNaN(num)||num<0){showToast("Invalid","error");return;}
  const kpi=kpiData.find(k=>k.id===kpiId);if(!kpi)return;
  const mp=kpi.yearlyPlan/12;
- if(num>mp*1.5&&mp>0&&!confirm(`Value ${num} >150% of plan. Allow?`))return;
+ if(num>mp*1.5&&mp>0){const ok=await showConfirm(`Value ${num} exceeds 150% of monthly plan (${fmt(mp)}). Allow?`,'High Value Warning');if(!ok)return;}
  const ov=kpi.monthlyActuals?.[mi]??0,oma={...(kpi.monthlyActuals||buildEmptyMonthlyActuals())};
  kpi.monthlyActuals={...oma,[mi]:num};
  renderDashboard();if(currentView==='kpiUpdateView')renderKpiUpdateView();
@@ -1003,7 +1010,8 @@ async function updateKpiMonthly(kpiId,mi,value){
 async function updateYearlyPlan(kpiId,value){if(!isAdmin){showToast("Viewer mode","error");return;}const num=parseFloat(value);if(isNaN(num)||num<=0){showToast("Invalid","error");return;}const kpi=kpiData.find(k=>k.id===kpiId);if(!kpi)return;const ov=kpi.yearlyPlan;kpi.yearlyPlan=num;renderDashboard();if(currentView==='kpiUpdateView')renderKpiUpdateView();try{await updateDoc(doc(db,"kpis",kpiId),{yearlyPlan:num,lastUpdated:serverTimestamp(),updatedBy:currentUserEmail||currentUserId});await logAudit(kpiId,kpi.name,"yearly_plan",ov,num);showToast(`${kpi.name} updated`,"success");}catch(e){kpi.yearlyPlan=ov;renderDashboard();if(currentView==='kpiUpdateView')renderKpiUpdateView();showToast("Failed — rolled back","error");}}
 
 function renderDashboard(){renderKpiCards();renderTable();renderSummaryBar();renderTopBottleneckContributors();renderAnomalyBanner();if(currentView==='dashboardView')generateExecutiveBrief();updateNavBadges();checkAndNotify();}
-function renderAnalytics(){renderCharts();renderDelayBuckets();renderOwnerLeaderboard();}
+async function renderAnalytics(){await renderCharts();renderDelayBuckets();renderOwnerLeaderboard();}
+
 function updateNavBadges(){const red=getEnrichedKpis().filter(k=>k.metrics.status==='red').length,nb=document.getElementById('navBadgeRed');if(nb){nb.textContent=red;nb.style.display=red>0?'inline':'none';}}
 
 // Fix #7: Skip empty category sections; Fix #19: remove loading skeleton
@@ -1091,8 +1099,7 @@ function renderOwnerLeaderboard(){
 }
 
 // Fix #13: Fix phantom doughnut slices when all KPIs are one status
-function renderCharts(){
- const enriched=getEnrichedKpis();const labels=enriched.map(k=>k.name.length>18?k.name.slice(0,16)+"…":k.name);
+async function renderCharts(){await ensureChartJs();const enriched=getEnrichedKpis();const labels=enriched.map(k=>k.name.length>18?k.name.slice(0,16)+"…":k.name);
  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
  const themeColor=getComputedStyle(document.documentElement).getPropertyValue('--blue').trim()||'#0D5E3A';
  const ctxBar=document.getElementById("barPlanActualChart")?.getContext("2d");if(ctxBar){if(barChart)barChart.destroy();barChart=new Chart(ctxBar,{type:"bar",data:{labels,datasets:[{label:"Plan",data:enriched.map(k=>k.yearlyPlan),backgroundColor:"#c5d9ec",borderRadius:6},{label:"Actual",data:enriched.map(k=>k.metrics.yearlyActual),backgroundColor:themeColor,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"top"}}}});}
@@ -1133,10 +1140,22 @@ async function ensureHtml2canvas() {
  if(window.html2canvas)return;
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
 }
+
 async function ensureJsPDF() {
  if(window.jspdf)return;
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
 }
+
+async function ensureChartJs() {
+ if(window.Chart) return;
+ await new Promise((res,rej)=>{
+   const s=document.createElement('script');
+   s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+   s.onload=res; s.onerror=rej;
+   document.head.appendChild(s);
+ });
+}
+
 async function ensureSheetJS() {
  if(window.XLSX)return;
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
@@ -1182,7 +1201,7 @@ function openKpiDetailModal(kpiId){
  document.getElementById("modalKpiName").textContent=kpi.name+" — Monthly Breakdown";
  const monthSel=document.getElementById("monthSelectorContainer");
  if(monthSel){monthSel.innerHTML=FY_MONTHS.map((m,idx)=>`<button class="month-btn ${idx<finMonth?'past':''} ${idx>finMonth?'future':''} ${idx===currentMonth?'active':''}" data-month="${idx}" ${idx>finMonth?"disabled":""}>${m}</button>`).join("");
-   document.querySelectorAll(".month-btn").forEach(btn=>btn.addEventListener("click",(e)=>{const idx=parseInt(e.target.dataset.month);if(idx>finMonth)return;if(isModalDirty&&!confirm("Unsaved changes. Change month?"))return;currentMonth=idx;document.querySelectorAll(".month-btn").forEach(b=>b.classList.remove("active"));e.target.classList.add("active");openKpiDetailModal(kpiId);renderDashboard();const ms=document.getElementById("monthSelect");if(ms)ms.value=idx;const ms2=document.getElementById("monthSelectKpi");if(ms2)ms2.value=idx;saveFilterState();}));}
+   document.querySelectorAll(".month-btn").forEach(btn=>btn.addEventListener("click",(e)=>{const idx=parseInt(e.target.dataset.month);if(idx>finMonth)return;if(isModalDirty){const ok=await showConfirm('Unsaved changes. Change month anyway?','Unsaved Changes');if(!ok)return;}currentMonth=idx;document.querySelectorAll(".month-btn").forEach(b=>b.classList.remove("active"));e.target.classList.add("active");openKpiDetailModal(kpiId);renderDashboard();const ms=document.getElementById("monthSelect");if(ms)ms.value=idx;const ms2=document.getElementById("monthSelectKpi");if(ms2)ms2.value=idx;saveFilterState();}));}
  const histContainer=document.getElementById("modalHistoryContainer");
  if(histContainer){
    histContainer.innerHTML=`<table class="month-table"><thead><tr><th>Month</th><th>Plan</th><th>Actual</th><th>%</th><th></th></tr></thead><tbody>${FY_MONTHS.map((mn,idx)=>{
@@ -1277,6 +1296,49 @@ function initKpiListener(){
 async function handleLogin(){const email=document.getElementById("loginEmail").value.trim();const pwd=document.getElementById("loginPassword").value;const errEl=document.getElementById("loginError");if(errEl)errEl.style.display="none";if(!email||!pwd){if(errEl){errEl.textContent="Please enter your credentials.";errEl.style.display="block";}return;}try{await signInWithEmailAndPassword(auth,email,pwd);}catch(e){if(errEl){errEl.textContent=parseFirebaseError(e,"Login failed.");errEl.style.display="block";}}}
 async function handleLogout(){try{await signOut(auth);showToast("Logged out");}catch(e){showToast("Logout failed","error");}}
 
+// Fix: Custom confirm modal (replaces native confirm())
+let confirmResolver = null;
+function showConfirm(message, title = 'Please Confirm') {
+  return new Promise(resolve => {
+    confirmResolver = resolve;
+    // Reuse the existing commentModal for confirmations
+    const modal = document.getElementById('commentModal');
+    const textarea = document.getElementById('commentText');
+    const saveBtn = document.getElementById('saveCommentBtn');
+    const cancelBtn = document.getElementById('cancelCommentBtn');
+    const closeBtn = document.getElementById('closeCommentModal');
+    const titleEl = modal?.querySelector('.modal-header h3');
+    
+    if(titleEl) titleEl.textContent = title;
+    if(textarea){textarea.style.display='none';}
+    
+    const msgEl = document.createElement('p');
+    msgEl.id = 'confirmMsg';
+    msgEl.style.cssText = 'padding:12px 0;font-size:0.84rem;color:var(--text);';
+    msgEl.textContent = message;
+    if(textarea) textarea.parentNode.insertBefore(msgEl, textarea);
+    
+    if(saveBtn){saveBtn.textContent='Confirm';saveBtn.onclick=()=>resolveConfirm(true);}
+    if(cancelBtn) cancelBtn.onclick = () => resolveConfirm(false);
+    if(closeBtn) closeBtn.onclick = () => resolveConfirm(false);
+    
+    modal?.classList.add('active');
+  });
+}
+
+function resolveConfirm(result) {
+  const modal = document.getElementById('commentModal');
+  const textarea = document.getElementById('commentText');
+  const saveBtn = document.getElementById('saveCommentBtn');
+  const msgEl = document.getElementById('confirmMsg');
+  
+  if(textarea) textarea.style.display = '';
+  if(msgEl) msgEl.remove();
+  if(saveBtn){saveBtn.textContent='Save';saveBtn.onclick=()=>{if(currentModalKpiId&&currentCommentMonth!==undefined)addComment(currentModalKpiId,currentCommentMonth,document.getElementById("commentText").value);}};
+  
+  modal?.classList.remove('active');
+  if(confirmResolver){confirmResolver(result);confirmResolver=null;}
+}
 onAuthStateChanged(auth,async user=>{
  if(user){
    currentUserId=user.uid;currentUserEmail=user.email;
