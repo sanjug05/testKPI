@@ -511,11 +511,6 @@ const DEFAULT_KPI_CATEGORIES = {
  finance:{name:"Finance KPIs",icon:"fa-coins",color:"#F97316",ids:["rr_total","collection"]}
 };
 
-let kpiCategories = null;
-let kpiOwners = null;
-let categoriesLoaded = false;
-let ownersLoaded = false;
-
 const KPI_DEFINITIONS = [
  { id:"showroom_audit_count", name:"Showroom Audit Count", yearlyPlan:504, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"operations" },
  { id:"showroom_addition", name:"Showroom Addition", yearlyPlan:120, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"sales" },
@@ -542,68 +537,94 @@ function safeRender() {
 
 function initDynamicDataListeners() {
  const catQuery = query(collection(db, "categories"));
+ const buildCategoryMap = (source) => Object.fromEntries(
+   Object.entries(source || {}).map(([key, cat]) => [key, {
+     key,
+     name: cat?.name || cat?.label || key,
+     icon: cat?.icon || "fa-circle",
+     color: cat?.color || "var(--text3)",
+     ids: []
+   }])
+ );
+ const assignCategoryIds = (cats) => {
+   if (!cats || !kpiData || !kpiData.length) return cats;
+   kpiData.forEach(kpi => {
+     const categoryKey = resolveCategoryKeyFromKpi(kpi, cats);
+     if (categoryKey && cats[categoryKey] && !cats[categoryKey].ids.includes(kpi.id)) {
+       cats[categoryKey].ids.push(kpi.id);
+     }
+   });
+   return cats;
+ };
+
  onSnapshot(catQuery, (snapshot) => {
    if (!snapshot.empty) {
      const fetchedCategories = {};
      snapshot.forEach(doc => {
-       const data = doc.data();
-       fetchedCategories[data.id || doc.id] = {
-         name: data.name || doc.id,
-         icon: "fa-circle",
-         color: data.color || "var(--text3)",
+       const data = doc.data() || {};
+       const categoryId = String(data.id || doc.id || '').trim();
+       if (!categoryId) return;
+       fetchedCategories[categoryId] = {
+         key: categoryId,
+         name: String(data.name || data.label || categoryId).trim() || categoryId,
+         icon: String(data.icon || 'fa-circle').trim() || 'fa-circle',
+         color: String(data.color || 'var(--text3)').trim() || 'var(--text3)',
          ids: []
        };
      });
-     // Populate ids from kpiData based on category field
-     if (kpiData && kpiData.length > 0) {
-       kpiData.forEach(kpi => {
-         if (kpi.category && fetchedCategories[kpi.category]) {
-           if (!fetchedCategories[kpi.category].ids.includes(kpi.id)) {
-             fetchedCategories[kpi.category].ids.push(kpi.id);
-           }
-         }
-       });
-     }
-     kpiCategories = { ...DEFAULT_KPI_CATEGORIES, ...fetchedCategories };
+     kpiCategories = assignCategoryIds(buildCategoryMap(fetchedCategories));
    } else {
-     kpiCategories = { ...DEFAULT_KPI_CATEGORIES };
+     kpiCategories = assignCategoryIds(buildCategoryMap(DEFAULT_KPI_CATEGORIES));
    }
    categoriesLoaded = true;
    safeRender();
  }, (error) => {
-   kpiCategories = { ...DEFAULT_KPI_CATEGORIES };
+   console.warn('Categories listener failed, using defaults', error);
+   kpiCategories = assignCategoryIds(buildCategoryMap(DEFAULT_KPI_CATEGORIES));
    categoriesLoaded = true;
    safeRender();
  });
-} // ← CLOSE initDynamicDataListeners HERE
+}
+ // ← CLOSE initDynamicDataListeners HERE
 
 // These are standalone functions (not inside initDynamicDataListeners):
-async function loadOwnersFromUsersCollection() {
- try {
-   const usersSnap = await getDocs(query(collection(db, "users")));
-   if (!usersSnap.empty) {
-     const owners = {};
-     usersSnap.forEach(doc => {
-       const data = doc.data();
-       const email = data.email || doc.id;
-       const name = data.displayName || getDisplayName(email);
-       owners[doc.id] = { name, email };
-     });
-     kpiOwners = owners;
-   } else {
-     kpiOwners = buildDefaultOwnersMap();
-   }
- } catch (e) {
-   kpiOwners = buildDefaultOwnersMap();
- }
- ownersLoaded = true;
- safeRender();
+function normalizeCategoryToken(value){
+ return String(value || '')
+   .trim()
+   .toLowerCase()
+   .replace(/[\s_-]+/g, ' ')
+   .replace(/\bkpis?\b/g, '')
+   .replace(/\bmetrics?\b/g, '')
+   .replace(/\s+/g, ' ')
+   .trim();
 }
 
-function buildDefaultOwnersMap() {
- const owners = {};
- KPI_DEFINITIONS.forEach(def => { owners[def.id] = { name: "Unassigned", email: "" }; });
- return owners;
+function resolveCategoryKeyFromKpi(kpi, cats) {
+  if (!kpi || !cats) return null;
+  const values = [kpi.categoryKey, kpi.category, kpi.categoryId, kpi.categoryName]
+    .filter(v => v !== undefined && v !== null && String(v).trim() !== '');
+  if (!values.length) return null;
+  const entries = Object.entries(cats);
+  if (!entries.length) return null;
+
+  // 1. Exact raw key match
+  for (const value of values) {
+    const rawValue = String(value).trim();
+    if (cats[rawValue]) return rawValue;
+  }
+
+  // 2. Normalized key match, 3. Normalized name match
+  for (const value of values) {
+    const normalizedValue = normalizeCategoryToken(value);
+    if (!normalizedValue) continue;
+    const normalizedKeyMatch = entries.find(([key]) => normalizeCategoryToken(key) === normalizedValue);
+    if (normalizedKeyMatch) return normalizedKeyMatch[0];
+    const normalizedNameMatch = entries.find(([, cat]) =>
+      normalizeCategoryToken(cat?.name || cat?.label || cat?.title || '') === normalizedValue
+    );
+    if (normalizedNameMatch) return normalizedNameMatch[0];
+  }
+  return null;
 }
 
 function getKpiOwner(kpiId) {
@@ -627,7 +648,7 @@ function getKpiCategory(kpiOrId){
  const kpiId = kpi ? kpi.id : kpiOrId;
 
  const directKey = resolveCategoryKeyFromKpi(kpi, cats);
- if(directKey) return { key: directKey, ...cats[directKey] };
+ if(directKey && cats[directKey]) return { key: directKey, ...cats[directKey] };
 
  for(const [key, cat] of Object.entries(cats)){
    if(cat.ids && cat.ids.includes(kpiId)) return { key, ...cat };
