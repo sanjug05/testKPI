@@ -474,7 +474,6 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 const firebaseConfig = { apiKey:"AIzaSyDav3rI7fTr8KrXYxvnz5LB82CgjRq4v20", authDomain:"ais-showroom-dashboard.firebaseapp.com", projectId:"ais-showroom-dashboard", storageBucket:"ais-showroom-dashboard.firebasestorage.app", messagingSenderId:"175667492150", appId:"1:175667492150:web:cb124eb267b4689e6a2f97" };
 const app = initializeApp(firebaseConfig), db = getFirestore(app), auth = getAuth(app);
 
-// Fix #23: Clean up old filter state keys on init
 ['kpi_filters_v5','kpi_filters_v4','kpi_filters_v3','kpi_filters_v2','kpi_filters_v1'].forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
 
 const FY_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
@@ -483,7 +482,6 @@ function getFYLabel(){const now=new Date(),cal=now.getMonth(),yr=now.getFullYear
 function getProgressColor(pct){if(pct<60)return"red";if(pct<90)return"amber";return"green";}
 function getDisplayName(email){if(!email)return"Unknown";const parts=email.split('@')[0].split('.');return parts.map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(' ');}
 
-// Fix #2 & #3: normalizeTimestamp helper — handles Firestore {seconds}, ISO string, Date
 function normalizeTimestamp(ts) {
  if (!ts) return null;
  if (ts && typeof ts === 'object' && ts.seconds !== undefined) {
@@ -511,6 +509,44 @@ const DEFAULT_KPI_CATEGORIES = {
  finance:{name:"Finance KPIs",icon:"fa-coins",color:"#F97316",ids:["rr_total","collection"]}
 };
 
+// ─── FIX A ────────────────────────────────────────────────────────────────────
+// Repopulates each category's `ids` array from the current kpiData.
+// Called from BOTH the category listener AND the KPI listener so there is
+// never a race-condition where one fires before the other has run.
+function repopulateCategoryIds() {
+  if (!kpiCategories || !kpiData || kpiData.length === 0) return;
+  // Reset all id arrays first
+  Object.values(kpiCategories).forEach(cat => { cat.ids = []; });
+  // Rebuild from live kpiData
+  kpiData.forEach(kpi => {
+    const key = kpi.category;
+    if (key && kpiCategories[key]) {
+      if (!kpiCategories[key].ids.includes(kpi.id)) {
+        kpiCategories[key].ids.push(kpi.id);
+      }
+    }
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+let kpiData=[],allAuditLogs=[],allComments=[],currentUserId=null,currentUserEmail=null,currentUserRole="viewer";
+let barChart,horizChart,trendChartInstance,catGapChart,perfMixChart,trendLineChart;
+let currentSort="default",currentKpiFilter="all",currentSearchTerm="",currentMonth=getFinancialMonth();
+let currentModalKpiId=null,currentCommentMonth=null,realtimeUnsub=null,auditUnsub=null,commentsUnsub=null;
+let isAdmin=false,groupByCategory=false;
+let pinnedKpis=[];
+let notifications=[],previousKpiState=[],currentView="dashboardView";
+let isModalDirty=false,originalModalValues=new Map();
+let chatMessages=[],suggestionMessages=[],chatUnread=0,suggestUnread=0,chatUnsub=null,suggestUnsub=null,activePanel=null;
+const notifiedStates = new Map();
+
+// kpiCategories starts null; gets set by initDynamicDataListeners
+let kpiCategories = null;
+
+function getPinnedKey() { return currentUserId ? `pinnedKpis_${currentUserId}` : 'pinnedKpis'; }
+function loadPinnedKpis() { pinnedKpis = JSON.parse(localStorage.getItem(getPinnedKey()) || '[]'); }
+function savePinnedKpis() { localStorage.setItem(getPinnedKey(), JSON.stringify(pinnedKpis)); }
+
 const KPI_DEFINITIONS = [
  { id:"showroom_audit_count", name:"Showroom Audit Count", yearlyPlan:504, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"operations" },
  { id:"showroom_addition", name:"Showroom Addition", yearlyPlan:120, unit:"count", owner:"Mayank Tomar", ownerEmail:"mayank.tomar@aisglass.com", category:"sales" },
@@ -526,7 +562,6 @@ const KPI_DEFINITIONS = [
  { id:"collection", name:"Collection (CRM/CSE/Branding)", yearlyPlan:1500, unit:"lakhs", owner:"Sanju Gupta", ownerEmail:"sanju.gupta@aisglass.com", category:"finance" }
 ];
 
-// Fix #4: safeRender — only renders when kpiData has content
 function safeRender() {
  if (!kpiData || kpiData.length === 0) return;
  if (currentView === 'dashboardView') renderDashboard();
@@ -535,103 +570,56 @@ function safeRender() {
  populateKpiFilter();
 }
 
+// ─── FIX B ────────────────────────────────────────────────────────────────────
+// Category listener: reads from "categories" collection (correct).
+// When snapshot fires, rebuilds kpiCategories from admin data ONLY
+// (admin is authoritative — no DEFAULT bleed-over).
+// Falls back to DEFAULT only when the collection is empty.
+// Preserves DEFAULT icons where admin doesn't supply them (admin has no icon field).
+// After building kpiCategories, calls repopulateCategoryIds() so ids are always
+// correct regardless of whether kpiData loaded before or after this fires.
 function initDynamicDataListeners() {
- const catQuery = query(collection(db, "categories"));
- const buildCategoryMap = (source) => Object.fromEntries(
-   Object.entries(source || {}).map(([key, cat]) => [key, {
-     key,
-     name: cat?.name || cat?.label || key,
-     icon: cat?.icon || "fa-circle",
-     color: cat?.color || "var(--text3)",
-     ids: []
-   }])
- );
- const assignCategoryIds = (cats) => {
-   if (!cats || !kpiData || !kpiData.length) return cats;
-   kpiData.forEach(kpi => {
-     const categoryKey = resolveCategoryKeyFromKpi(kpi, cats);
-     if (categoryKey && cats[categoryKey] && !cats[categoryKey].ids.includes(kpi.id)) {
-       cats[categoryKey].ids.push(kpi.id);
-     }
-   });
-   return cats;
- };
-
- onSnapshot(catQuery, (snapshot) => {
-   if (!snapshot.empty) {
-     const fetchedCategories = {};
-     snapshot.forEach(doc => {
-       const data = doc.data() || {};
-       const categoryId = String(data.id || doc.id || '').trim();
-       if (!categoryId) return;
-       fetchedCategories[categoryId] = {
-         key: categoryId,
-         name: String(data.name || data.label || categoryId).trim() || categoryId,
-         icon: String(data.icon || 'fa-circle').trim() || 'fa-circle',
-         color: String(data.color || 'var(--text3)').trim() || 'var(--text3)',
-         ids: []
-       };
-     });
-     kpiCategories = assignCategoryIds(buildCategoryMap(fetchedCategories));
-   } else {
-     kpiCategories = assignCategoryIds(buildCategoryMap(DEFAULT_KPI_CATEGORIES));
-   }
-   categoriesLoaded = true;
-   safeRender();
- }, (error) => {
-   console.warn('Categories listener failed, using defaults', error);
-   kpiCategories = assignCategoryIds(buildCategoryMap(DEFAULT_KPI_CATEGORIES));
-   categoriesLoaded = true;
-   safeRender();
- });
+  const catQuery = query(collection(db, "categories"));
+  onSnapshot(catQuery, (snapshot) => {
+    if (!snapshot.empty) {
+      const fetchedCategories = {};
+      snapshot.forEach(d => {
+        const data = d.data();
+        const key = data.id || d.id;
+        fetchedCategories[key] = {
+          name: data.name || key,
+          // Admin backend doesn't store icons — borrow from DEFAULT when key matches
+          icon: DEFAULT_KPI_CATEGORIES[key]?.icon || "fa-circle",
+          color: data.color || DEFAULT_KPI_CATEGORIES[key]?.color || "var(--text3)",
+          ids: [] // will be filled by repopulateCategoryIds()
+        };
+      });
+      // Admin is the single source of truth — do NOT merge with DEFAULT_KPI_CATEGORIES.
+      // That merge caused removed admin categories to ghost-linger on the frontend.
+      kpiCategories = fetchedCategories;
+    } else {
+      // No admin categories exist yet — fall back to hard-coded defaults
+      kpiCategories = JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES));
+    }
+    // Populate ids from whatever kpiData we have right now
+    repopulateCategoryIds();
+    safeRender();
+  }, (error) => {
+    console.warn("Category listener error, using defaults:", error);
+    kpiCategories = JSON.parse(JSON.stringify(DEFAULT_KPI_CATEGORIES));
+    repopulateCategoryIds();
+    safeRender();
+  });
 }
- // ← CLOSE initDynamicDataListeners HERE
-
-// These are standalone functions (not inside initDynamicDataListeners):
-function normalizeCategoryToken(value){
- return String(value || '')
-   .trim()
-   .toLowerCase()
-   .replace(/[\s_-]+/g, ' ')
-   .replace(/\bkpis?\b/g, '')
-   .replace(/\bmetrics?\b/g, '')
-   .replace(/\s+/g, ' ')
-   .trim();
-}
-
-function resolveCategoryKeyFromKpi(kpi, cats) {
-  if (!kpi || !cats) return null;
-  const values = [kpi.categoryKey, kpi.category, kpi.categoryId, kpi.categoryName]
-    .filter(v => v !== undefined && v !== null && String(v).trim() !== '');
-  if (!values.length) return null;
-  const entries = Object.entries(cats);
-  if (!entries.length) return null;
-
-  // 1. Exact raw key match
-  for (const value of values) {
-    const rawValue = String(value).trim();
-    if (cats[rawValue]) return rawValue;
-  }
-
-  // 2. Normalized key match, 3. Normalized name match
-  for (const value of values) {
-    const normalizedValue = normalizeCategoryToken(value);
-    if (!normalizedValue) continue;
-    const normalizedKeyMatch = entries.find(([key]) => normalizeCategoryToken(key) === normalizedValue);
-    if (normalizedKeyMatch) return normalizedKeyMatch[0];
-    const normalizedNameMatch = entries.find(([, cat]) =>
-      normalizeCategoryToken(cat?.name || cat?.label || cat?.title || '') === normalizedValue
-    );
-    if (normalizedNameMatch) return normalizedNameMatch[0];
-  }
-  return null;
-}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function getKpiOwner(kpiId) {
+  // Read directly from live kpiData — reflects any owner changes admin makes to kpi docs
   const kpi = kpiData.find(k => k.id === kpiId);
   if (kpi && kpi.owner) {
     return { name: kpi.owner, email: kpi.ownerEmail || '' };
   }
+  // Fallback to KPI_DEFINITIONS
   const def = KPI_DEFINITIONS.find(d => d.id === kpiId);
   return { name: def?.owner || "Unassigned", email: def?.ownerEmail || "" };
 }
@@ -648,7 +636,7 @@ function getKpiCategory(kpiOrId){
  const kpiId = kpi ? kpi.id : kpiOrId;
 
  const directKey = resolveCategoryKeyFromKpi(kpi, cats);
- if(directKey && cats[directKey]) return { key: directKey, ...cats[directKey] };
+ if(directKey) return { key: directKey, ...cats[directKey] };
 
  for(const [key, cat] of Object.entries(cats)){
    if(cat.ids && cat.ids.includes(kpiId)) return { key, ...cat };
@@ -658,50 +646,6 @@ function getKpiCategory(kpiOrId){
 
 function buildEmptyMonthlyActuals(){const m={};for(let i=0;i<12;i++)m[i]=0;return m;}
 
-let kpiData=[],allAuditLogs=[],allComments=[],currentUserId=null,currentUserEmail=null,currentUserRole="viewer";
-let barChart,horizChart,trendChartInstance,catGapChart,perfMixChart,trendLineChart;
-let currentSort="default",currentKpiFilter="all",currentSearchTerm="",currentMonth=getFinancialMonth();
-let currentModalKpiId=null,currentCommentMonth=null,realtimeUnsub=null,auditUnsub=null,commentsUnsub=null;
-let isAdmin=false,groupByCategory=false;
-// Fix #24: Scoped pinnedKpis key to current user (set after login)
-let pinnedKpis=[];
-let notifications=[],previousKpiState=[],currentView="dashboardView";
-let isModalDirty=false,originalModalValues=new Map();
-let chatMessages=[],suggestionMessages=[],chatUnread=0,suggestUnread=0,chatUnsub=null,suggestUnsub=null,activePanel=null;
-
-// Fix #12: Track already-notified KPI+status to avoid duplicates
-const notifiedStates = new Map();
-
-function getPinnedKey() { return currentUserId ? `pinnedKpis_${currentUserId}` : 'pinnedKpis'; }
-function loadPinnedKpis() { pinnedKpis = JSON.parse(localStorage.getItem(getPinnedKey()) || '[]'); }
-function savePinnedKpis() { localStorage.setItem(getPinnedKey(), JSON.stringify(pinnedKpis)); }
-
-const THEME_COLORS = [
- {name:'King Green',color:'#0D5E3A',light:'#D4EDDA',dark:'#0a4e30',sidebar:'#0a4e30'},
- {name:'Royal Blue',color:'#1E40AF',light:'#DBEAFE',dark:'#1E3A5F',sidebar:'#0F1E47'},
- {name:'Deep Purple',color:'#6D28D9',light:'#EDE9FE',dark:'#4C1D95',sidebar:'#2E1065'},
- {name:'Crimson Red',color:'#BE123C',light:'#FEE2E2',dark:'#881337',sidebar:'#450A0A'},
- {name:'Teal',color:'#0D9488',light:'#CCFBF1',dark:'#0F766E',sidebar:'#134E4A'},
- {name:'Amber Gold',color:'#B45309',light:'#FEF3C7',dark:'#78350F',sidebar:'#451A03'},
- {name:'Slate Grey',color:'#475569',light:'#E2E8F0',dark:'#1E293B',sidebar:'#0F172A'},
- {name:'Midnight',color:'#1E293B',light:'#CBD5E1',dark:'#0F172A',sidebar:'#0F172A'}
-];
-
-function applyThemeColor(colorObj){
- const root=document.documentElement;
- root.style.setProperty('--blue',colorObj.color);root.style.setProperty('--blue-light',colorObj.light);
- root.style.setProperty('--navy',colorObj.color);root.style.setProperty('--navy-dark',colorObj.dark);
- root.style.setProperty('--sidebar-bg',colorObj.sidebar);
- document.getElementById('themeDot').style.background=colorObj.color;
- localStorage.setItem('kpi_theme_color',JSON.stringify(colorObj));renderCharts();
-}
-function loadThemeColor(){const saved=localStorage.getItem('kpi_theme_color');if(saved){try{applyThemeColor(JSON.parse(saved));}catch(e){applyThemeColor(THEME_COLORS[0]);}}else{applyThemeColor(THEME_COLORS[0]);}}
-function buildThemePicker(){
- const grid=document.getElementById('themeColorGrid'),saved=JSON.parse(localStorage.getItem('kpi_theme_color')||'{}');
- grid.innerHTML=THEME_COLORS.map(c=>`<div class="theme-color-opt ${saved.color===c.color?'active':''}" style="background:${c.color};" data-color='${JSON.stringify(c).replace(/'/g,"&#39;")}' title="${c.name}"></div>`).join('');
- grid.querySelectorAll('.theme-color-opt').forEach(el=>{el.addEventListener('click',()=>{applyThemeColor(JSON.parse(el.getAttribute('data-color')));buildThemePicker();});});
-}
-// Fix #16 & #17: Chat with normalizeTimestamp, char counter
 function initChatListener(){if(chatUnsub)chatUnsub();const q=query(collection(db,"team_chats"),orderBy("timestamp","asc"),limit(200));chatUnsub=onSnapshot(q,(snap)=>{chatMessages=snap.docs.map(d=>({id:d.id,...d.data()}));renderChatMessages();});}
 
 function renderChatMessages(){
@@ -718,7 +662,6 @@ function buildChatBubble(m){
  return`<div class="chat-msg ${isSelf?'self':'other'} ${m.pinned?'pinned':''}"><div class="chat-msg-header"><span class="chat-msg-sender">${esc(getDisplayName(m.senderEmail))}</span><span class="chat-msg-time">${timeStr}</span></div><div class="chat-msg-text">${esc(m.text)}</div>${isSelf||isAdmin?`<button class="chat-pin-btn ${m.pinned?'active':''}" data-id="${m.id}" data-pinned="${m.pinned}"><i class="fas fa-thumbtack"></i></button>`:''}</div>`;
 }
 
-// Fix #25: Optimistic rollback for sendChatMessage
 async function sendChatMessage(){
  const input=document.getElementById('chatInput');
  const text=input.value.trim();
@@ -734,7 +677,6 @@ async function sendChatMessage(){
  }
 }
 
-// Fix #11: Fix cp boolean parsing in togglePinMessage
 async function togglePinMessage(msgId, cp){
  const pinned = cp === true || cp === 'true';
  try{await updateDoc(doc(db,"team_chats",msgId),{pinned:!pinned});}
@@ -744,7 +686,6 @@ async function togglePinMessage(msgId, cp){
 function openChatPanel(){closeAllPanels();activePanel='chat';document.getElementById('chatPanel').classList.add('open');chatUnread=0;updateChatBadge();}
 function closeChatPanel(){document.getElementById('chatPanel').classList.remove('open');activePanel=null;}
 
-// Fix #16: use normalizeTimestamp for suggestions
 function initSuggestListener(){if(suggestUnsub)suggestUnsub();const q=query(collection(db,"team_suggestions"),orderBy("timestamp","asc"),limit(100));suggestUnsub=onSnapshot(q,(snap)=>{suggestionMessages=snap.docs.map(d=>({id:d.id,...d.data()}));renderSuggestMessages();});}
 
 function renderSuggestMessages(){
@@ -754,7 +695,6 @@ function renderSuggestMessages(){
  c.scrollTop=c.scrollHeight;
 }
 
-// Fix #25: Optimistic rollback for sendSuggestion
 async function sendSuggestion(){
  const input=document.getElementById('suggestInput');
  const text=input.value.trim();
@@ -776,7 +716,6 @@ function closeAllPanels(){document.getElementById('chatPanel').classList.remove(
 function updateChatBadge(){const b=document.getElementById('navBadgeChat');b.textContent=chatUnread;b.style.display=chatUnread>0?'inline':'none';}
 function updateSuggestBadge(){const b=document.getElementById('navBadgeSuggest');b.textContent=suggestUnread;b.style.display=suggestUnread>0?'inline':'none';}
 
-// Fix #17: Character counter updates
 function updateChatCharCounter(){
  const input=document.getElementById('chatInput');
  const counter=document.getElementById('chatCharCounter');
@@ -794,7 +733,6 @@ function pct(n){return fmt(n)+"%";}
 function showToast(msg,type="info"){const c=document.getElementById("toastContainer"),t=document.createElement("div");t.className="toast";t.style.borderLeft=`4px solid ${type==='success'?'#2b9e5c':type==='error'?'#dc5a3c':'#1f6392'}`;t.innerHTML=`<i class="fas fa-${type==='success'?'check-circle':type==='error'?'exclamation-triangle':'info-circle'}"></i> ${msg}`;c.appendChild(t);setTimeout(()=>t.remove(),3400);}
 function parseFirebaseError(e,f){const m={"auth/invalid-credential":"Invalid email or password.","permission-denied":"Access denied."};return m[e?.code]||f;}
 
-// Fix #22: Update document.title dynamically in switchView
 function switchView(viewId){
  document.querySelectorAll('.view-container').forEach(v=>v.classList.remove('active'));const view=document.getElementById(viewId);if(view)view.classList.add('active');
  currentView=viewId;setActiveNav(viewId);
@@ -811,7 +749,6 @@ function switchView(viewId){
 
 function setActiveNav(viewId){document.querySelectorAll('.nav-item[data-view]').forEach(n=>n.classList.remove('active'));const nav=document.querySelector(`.nav-item[data-view="${viewId}"]`);if(nav)nav.classList.add('active');}
 
-// Fix #8: Mobile sidebar toggle
 function openMobileSidebar(){document.getElementById('sidebar').classList.add('mobile-open');document.getElementById('sidebarOverlay').classList.add('active');}
 function closeMobileSidebar(){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebarOverlay').classList.remove('active');}
 function toggleMobileSidebar(){const s=document.getElementById('sidebar');if(s.classList.contains('mobile-open'))closeMobileSidebar();else openMobileSidebar();}
@@ -835,7 +772,6 @@ function markAllNotificationsRead(){notifications.forEach(n=>n.read=true);render
 function clearAllNotifications(){notifications=[];renderNotifications();updateNotifBadge();}
 function renderNotifications(){const l=document.getElementById('notifList');if(!l)return;if(!notifications.length){l.innerHTML='<div class="notif-empty">No notifications</div>';return;}l.innerHTML=notifications.slice(0,30).map(n=>{const ic=n.type==='critical'?'crit':n.type==='warning'?'warn':'ok',ii=n.type==='critical'?'fa-circle-exclamation':n.type==='warning'?'fa-triangle-exclamation':'fa-circle-check';return`<div class="notif-item ${n.read?'':'unread'}"><div class="notif-item-icon ${ic}"><i class="fas ${ii}"></i></div><div><div style="font-weight:600;font-size:0.72rem;">${esc(n.title)}</div><div style="font-size:0.66rem;color:var(--text3);">${esc(n.desc)}</div><div style="font-size:0.58rem;color:var(--text3);">${new Date(n.createdAt).toLocaleString('en-IN')}</div></div></div>`;}).join('');}
 
-// Fix #12: Use notifiedStates map to avoid duplicate notifications
 function checkAndNotify(){
  const enriched=getEnrichedKpis();
  const prevMap={};previousKpiState.forEach(k=>{prevMap[k.id]=k;});
@@ -864,7 +800,6 @@ function checkAndNotify(){
  previousKpiState=JSON.parse(JSON.stringify(enriched));
 }
 
-// Fix #10: Use ?? 0 instead of || 0 for anomaly detection
 function detectAnomalies(){
  const a=[],enriched=getEnrichedKpis();
  enriched.forEach(k=>{
@@ -945,7 +880,6 @@ function initAuditListener(){
  auditUnsub=onSnapshot(q,(snap)=>{
    const fl=snap.docs.map(d=>({id:d.id,...d.data()}));
    const ll=JSON.parse(localStorage.getItem("kpi_audit_local")||"[]");
-   // Fix #9: Deduplicate by id
    const firestoreIds = new Set(fl.map(l => l.id).filter(Boolean));
    const filteredLocal = ll.filter(l => !l.id || !firestoreIds.has(l.id));
    allAuditLogs=[...filteredLocal,...fl].sort((a,b)=>{
@@ -958,7 +892,6 @@ function initAuditListener(){
  });
 }
 
-// Fix #2 & #3: Use normalizeTimestamp for date filter AND display
 function renderAuditTable(){
  const kf=document.getElementById("auditKpiFilter")?.value||"all";
  const uf=document.getElementById("auditUserFilter")?.value||"all";
@@ -1004,7 +937,6 @@ function renderCommentsInModal(){
  container.innerHTML=kc.map(c=>`<div class="comment-item" style="background:#f6fdf8;border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:0.74rem;"><div class="comment-meta" style="display:flex;justify-content:space-between;font-size:0.62rem;color:var(--text3);"><strong>${esc(getDisplayName(c.userEmail))}</strong> ${formatTimestamp(c.timestamp)}</div><div style="color:var(--text);">${esc(c.text)}</div></div>`).join("");
 }
 
-// Fix #6: Month lock — properly handle April (month 0) at start of FY
 async function updateKpiMonthly(kpiId,mi,value){
  if(!isAdmin){showToast("Viewer mode","error");return;}
  const cfm=getFinancialMonth();
@@ -1031,7 +963,6 @@ async function renderAnalytics(){await renderCharts();renderDelayBuckets();rende
 
 function updateNavBadges(){const red=getEnrichedKpis().filter(k=>k.metrics.status==='red').length,nb=document.getElementById('navBadgeRed');if(nb){nb.textContent=red;nb.style.display=red>0?'inline':'none';}}
 
-// Fix #7: Skip empty category sections; Fix #19: remove loading skeleton
 function renderKpiCards(){
  const container=document.getElementById("kpiCardsContainer");
  if(!container)return;
@@ -1053,7 +984,6 @@ function renderKpiCards(){
      const c=cats[key];
      const catDef = (kpiCategories || DEFAULT_KPI_CATEGORIES)[key];
      if(!catDef) return;
-     // Fix #7: Skip categories with zero KPIs
      if(!c || c.entities.length === 0) return;
      const aa=Math.round(c.entities.reduce((s,k)=>s+k.metrics.yearlyPct,0)/c.entities.length);
      html+=`<div class="kpi-category-section"><div class="kpi-category-header" style="--cat-color:${catDef.color};"><div><i class="fas ${catDef.icon}"></i> <strong>${catDef.name}</strong> <span style="font-size:0.68rem;color:var(--text3);">${c.entities.length} KPIs · Avg ${pct(aa)}</span></div></div><div class="kpi-category-body">${c.entities.map(k=>buildKpiCard(k)).join('')}</div></div>`;
@@ -1115,7 +1045,6 @@ function renderOwnerLeaderboard(){
  document.getElementById("ownerLeaderboard").innerHTML=ranked.map((r,i)=>`<div class="leaderboard-item"><div class="leaderboard-rank ${i===0?'gold':i===1?'silver':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</div><div class="leaderboard-name">${esc(r.owner)} <span style="font-size:0.62rem;color:var(--text3);">(${r.count})</span></div><div class="leaderboard-bar-wrap"><div class="leaderboard-bar"><div class="leaderboard-bar-fill" style="width:${Math.round((r.avg/maxAvg)*100)}%;"></div></div></div><div class="leaderboard-value">${pct(Math.round(r.avg))}</div></div>`).join('');
 }
 
-// Fix #13: Fix phantom doughnut slices when all KPIs are one status
 async function renderCharts(){await ensureChartJs();const enriched=getEnrichedKpis();const labels=enriched.map(k=>k.name.length>18?k.name.slice(0,16)+"…":k.name);
  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
  const themeColor=getComputedStyle(document.documentElement).getPropertyValue('--blue').trim()||'#0D5E3A';
@@ -1126,7 +1055,7 @@ async function renderCharts(){await ensureChartJs();const enriched=getEnrichedKp
  catOrder.forEach(key=>{
    const catDef = (kpiCategories || DEFAULT_KPI_CATEGORIES)[key];
    if(!catDef) return;
-  const ck=enriched.filter(k=>getKpiCategory(k).key===key);
+   const ck=enriched.filter(k=>getKpiCategory(k).key===key);
    if(ck.length===0)return;
    const tp=ck.reduce((s,k)=>s+k.yearlyPlan,0),ta=ck.reduce((s,k)=>s+k.metrics.yearlyActual,0);
    cgd.push({category:catDef.name,plan:tp,actual:ta});
@@ -1152,7 +1081,6 @@ async function renderCharts(){await ensureChartJs();const enriched=getEnrichedKp
 
 function downloadChart(chartId,filename){const canvas=document.querySelector(`#${chartId}`);if(!canvas){showToast("Chart not found","error");return;}const link=document.createElement("a");link.download=`${filename}.png`;link.href=canvas.toDataURL("image/png");link.click();showToast("Downloaded","success");}
 
-// Fix #21: Lazy-load heavy scripts on demand
 async function ensureHtml2canvas() {
  if(window.html2canvas)return;
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
@@ -1178,7 +1106,6 @@ async function ensureSheetJS() {
  await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
 }
 
-// Fix #14: Guard exports when no data
 async function exportToPDF(){
  if(!kpiData.length){showToast("No data to export","error");return;}
  showToast("Generating PDF...","info");
@@ -1189,7 +1116,6 @@ async function exportToPDF(){
  try{const canvas=await html2canvas(el,{scale:2,useCORS:true,logging:false,windowWidth:el.scrollWidth});const imgData=canvas.toDataURL("image/png");const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4',compress:true});const iw=280,ih=(canvas.height*iw)/canvas.width;let hl=ih,pos=0,pn=1;pdf.addImage(imgData,'PNG',10,pos,iw,ih);hl-=(pdf.internal.pageSize.getHeight()-20);while(hl>0){pos=hl-ih;pdf.addPage();pdf.addImage(imgData,'PNG',10,pos,iw,ih);pdf.setFontSize(9);pdf.setTextColor(148,163,184);pdf.text(`Page ${pn+1}`,pdf.internal.pageSize.getWidth()/2,pdf.internal.pageSize.getHeight()-8,{align:'center'});hl-=(pdf.internal.pageSize.getHeight()-20);pn++;}pdf.save(`KPI_Report_${getFYLabel()}_${new Date().toISOString().slice(0,10)}.pdf`);showToast(`PDF exported (${pn} pages)`,"success");}catch(e){showToast("PDF failed","error");}
 }
 
-// Fix #14: Guard export; Fix #21: lazy load SheetJS
 async function exportToExcel(){
  if(!kpiData.length){showToast("No data to export","error");return;}
  await ensureSheetJS();
@@ -1205,7 +1131,6 @@ async function exportToExcel(){
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([header,...rows]),"KPI Summary");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ms),"Monthly Actuals");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cr),"Category Analysis");XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(or),"Owner Scorecard");XLSX.writeFile(wb,`KPI_${getFYLabel().replace(/\s/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`);showToast("Excel exported (4 sheets)","success");
 }
 
-// Fix #14: Guard backup
 function backupData(){
  if(!kpiData.length){showToast("No data to backup","error");return;}
  try{const b={kpiData,allAuditLogs,exportedAt:new Date().toISOString(),version:'6.4'};const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([JSON.stringify(b,null,2)],{type:'application/json'})),download:`kpi_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`});a.click();showToast('Backup downloaded','success');}catch(e){showToast('Backup failed','error');}
@@ -1218,7 +1143,7 @@ function openKpiDetailModal(kpiId){
  document.getElementById("modalKpiName").textContent=kpi.name+" — Monthly Breakdown";
  const monthSel=document.getElementById("monthSelectorContainer");
  if(monthSel){monthSel.innerHTML=FY_MONTHS.map((m,idx)=>`<button class="month-btn ${idx<finMonth?'past':''} ${idx>finMonth?'future':''} ${idx===currentMonth?'active':''}" data-month="${idx}" ${idx>finMonth?"disabled":""}>${m}</button>`).join("");
-   document.querySelectorAll(".month-btn").forEach(btn=>btn.addEventListener("click",(e)=>{const idx=parseInt(e.target.dataset.month);if(idx>finMonth)return;if(isModalDirty){const ok=await showConfirm('Unsaved changes. Change month anyway?','Unsaved Changes');if(!ok)return;}currentMonth=idx;document.querySelectorAll(".month-btn").forEach(b=>b.classList.remove("active"));e.target.classList.add("active");openKpiDetailModal(kpiId);renderDashboard();const ms=document.getElementById("monthSelect");if(ms)ms.value=idx;const ms2=document.getElementById("monthSelectKpi");if(ms2)ms2.value=idx;saveFilterState();}));}
+   document.querySelectorAll(".month-btn").forEach(btn=>btn.addEventListener("click",(e)=>{const idx=parseInt(e.target.dataset.month);if(idx>finMonth)return;currentMonth=idx;document.querySelectorAll(".month-btn").forEach(b=>b.classList.remove("active"));e.target.classList.add("active");openKpiDetailModal(kpiId);renderDashboard();const ms=document.getElementById("monthSelect");if(ms)ms.value=idx;const ms2=document.getElementById("monthSelectKpi");if(ms2)ms2.value=idx;saveFilterState();}));}
  const histContainer=document.getElementById("modalHistoryContainer");
  if(histContainer){
    histContainer.innerHTML=`<table class="month-table"><thead><tr><th>Month</th><th>Plan</th><th>Actual</th><th>%</th><th></th></tr></thead><tbody>${FY_MONTHS.map((mn,idx)=>{
@@ -1258,7 +1183,6 @@ function populateMonthSelect(){
  if(sel2){sel2.addEventListener("change",(e)=>{const val=parseInt(e.target.value);if(val>getFinancialMonth()){e.target.value=currentMonth;return;}currentMonth=val;sel.value=val;renderDashboard();renderKpiUpdateView();saveFilterState();});}
 }
 
-// Fix #5: populateKpiFilter only populates dropdown options; event listeners attached once at init
 function populateKpiFilter(){
  const sel=document.getElementById("kpiSelectFilter");if(!sel)return;
  const sel2=document.getElementById("kpiSelectFilterKpi");const curr=sel.value;
@@ -1267,7 +1191,6 @@ function populateKpiFilter(){
  const as=document.getElementById("auditKpiFilter");if(as){const ac=as.value;as.innerHTML='<option value="all">All KPIs</option>'+kpiData.map(k=>`<option value="${k.id}" ${k.id===ac?"selected":""}>${esc(k.name)}</option>`).join("");}
 }
 
-// Fix #5: Attach filter change listeners exactly once
 function attachFilterListeners(){
  const sel=document.getElementById("kpiSelectFilter");
  const sel2=document.getElementById("kpiSelectFilterKpi");
@@ -1281,6 +1204,10 @@ function attachFilterListeners(){
  }
 }
 
+// ─── FIX C ────────────────────────────────────────────────────────────────────
+// KPI listener: after kpiData is updated, call repopulateCategoryIds() so that
+// category grouping reflects any category field changes admin made on kpi docs.
+// Owner changes are automatically reflected because getKpiOwner() reads kpiData live.
 function initKpiListener(){
  if(realtimeUnsub)realtimeUnsub();
  realtimeUnsub=onSnapshot(collection(db,"kpis"),async(snapshot)=>{
@@ -1304,41 +1231,66 @@ function initKpiListener(){
      }
    }
    kpiData=fetched.sort((a,b)=>KPI_DEFINITIONS.findIndex(d=>d.id===a.id)-KPI_DEFINITIONS.findIndex(d=>d.id===b.id));
+   // ← KEY FIX: repopulate category ids now that kpiData is fresh.
+   // This resolves the race condition where categories snapshot fired
+   // before kpiData was available, leaving all ids arrays empty.
+   // Also handles admin changing a KPI's category field in Firestore.
+   repopulateCategoryIds();
    safeRender();
    populateKpiFilter();
  });
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ========== AUTH ==========
+const THEME_COLORS = [
+ {name:'King Green',color:'#0D5E3A',light:'#D4EDDA',dark:'#0a4e30',sidebar:'#0a4e30'},
+ {name:'Royal Blue',color:'#1E40AF',light:'#DBEAFE',dark:'#1E3A5F',sidebar:'#0F1E47'},
+ {name:'Deep Purple',color:'#6D28D9',light:'#EDE9FE',dark:'#4C1D95',sidebar:'#2E1065'},
+ {name:'Crimson Red',color:'#BE123C',light:'#FEE2E2',dark:'#881337',sidebar:'#450A0A'},
+ {name:'Teal',color:'#0D9488',light:'#CCFBF1',dark:'#0F766E',sidebar:'#134E4A'},
+ {name:'Amber Gold',color:'#B45309',light:'#FEF3C7',dark:'#78350F',sidebar:'#451A03'},
+ {name:'Slate Grey',color:'#475569',light:'#E2E8F0',dark:'#1E293B',sidebar:'#0F172A'},
+ {name:'Midnight',color:'#1E293B',light:'#CBD5E1',dark:'#0F172A',sidebar:'#0F172A'}
+];
+
+function applyThemeColor(colorObj){
+ const root=document.documentElement;
+ root.style.setProperty('--blue',colorObj.color);root.style.setProperty('--blue-light',colorObj.light);
+ root.style.setProperty('--navy',colorObj.color);root.style.setProperty('--navy-dark',colorObj.dark);
+ root.style.setProperty('--sidebar-bg',colorObj.sidebar);
+ document.getElementById('themeDot').style.background=colorObj.color;
+ localStorage.setItem('kpi_theme_color',JSON.stringify(colorObj));renderCharts();
+}
+function loadThemeColor(){const saved=localStorage.getItem('kpi_theme_color');if(saved){try{applyThemeColor(JSON.parse(saved));}catch(e){applyThemeColor(THEME_COLORS[0]);}}else{applyThemeColor(THEME_COLORS[0]);}}
+function buildThemePicker(){
+ const grid=document.getElementById('themeColorGrid'),saved=JSON.parse(localStorage.getItem('kpi_theme_color')||'{}');
+ grid.innerHTML=THEME_COLORS.map(c=>`<div class="theme-color-opt ${saved.color===c.color?'active':''}" style="background:${c.color};" data-color='${JSON.stringify(c).replace(/'/g,"&#39;")}' title="${c.name}"></div>`).join('');
+ grid.querySelectorAll('.theme-color-opt').forEach(el=>{el.addEventListener('click',()=>{applyThemeColor(JSON.parse(el.getAttribute('data-color')));buildThemePicker();});});
+}
+
 async function handleLogin(){const email=document.getElementById("loginEmail").value.trim();const pwd=document.getElementById("loginPassword").value;const errEl=document.getElementById("loginError");if(errEl)errEl.style.display="none";if(!email||!pwd){if(errEl){errEl.textContent="Please enter your credentials.";errEl.style.display="block";}return;}try{await signInWithEmailAndPassword(auth,email,pwd);}catch(e){if(errEl){errEl.textContent=parseFirebaseError(e,"Login failed.");errEl.style.display="block";}}}
 async function handleLogout(){try{await signOut(auth);showToast("Logged out");}catch(e){showToast("Logout failed","error");}}
 
-// Fix: Custom confirm modal (replaces native confirm())
 let confirmResolver = null;
 function showConfirm(message, title = 'Please Confirm') {
   return new Promise(resolve => {
     confirmResolver = resolve;
-    // Reuse the existing commentModal for confirmations
     const modal = document.getElementById('commentModal');
     const textarea = document.getElementById('commentText');
     const saveBtn = document.getElementById('saveCommentBtn');
     const cancelBtn = document.getElementById('cancelCommentBtn');
     const closeBtn = document.getElementById('closeCommentModal');
     const titleEl = modal?.querySelector('.modal-header h3');
-    
     if(titleEl) titleEl.textContent = title;
     if(textarea){textarea.style.display='none';}
-    
     const msgEl = document.createElement('p');
     msgEl.id = 'confirmMsg';
     msgEl.style.cssText = 'padding:12px 0;font-size:0.84rem;color:var(--text);';
     msgEl.textContent = message;
     if(textarea) textarea.parentNode.insertBefore(msgEl, textarea);
-    
     if(saveBtn){saveBtn.textContent='Confirm';saveBtn.onclick=()=>resolveConfirm(true);}
     if(cancelBtn) cancelBtn.onclick = () => resolveConfirm(false);
     if(closeBtn) closeBtn.onclick = () => resolveConfirm(false);
-    
     modal?.classList.add('active');
   });
 }
@@ -1348,14 +1300,13 @@ function resolveConfirm(result) {
   const textarea = document.getElementById('commentText');
   const saveBtn = document.getElementById('saveCommentBtn');
   const msgEl = document.getElementById('confirmMsg');
-  
   if(textarea) textarea.style.display = '';
   if(msgEl) msgEl.remove();
   if(saveBtn){saveBtn.textContent='Save';saveBtn.onclick=()=>{if(currentModalKpiId&&currentCommentMonth!==undefined)addComment(currentModalKpiId,currentCommentMonth,document.getElementById("commentText").value);}};
-  
   modal?.classList.remove('active');
   if(confirmResolver){confirmResolver(result);confirmResolver=null;}
 }
+
 onAuthStateChanged(auth,async user=>{
  if(user){
    currentUserId=user.uid;currentUserEmail=user.email;
@@ -1389,7 +1340,6 @@ onAuthStateChanged(auth,async user=>{
  }
 });
 
-// ========== EVENT LISTENERS ==========
 document.getElementById("doLoginBtn")?.addEventListener("click",handleLogin);
 document.getElementById("loginPassword")?.addEventListener("keydown",e=>{if(e.key==="Enter")handleLogin();});
 document.getElementById("logoutMainBtn")?.addEventListener("click",handleLogout);
