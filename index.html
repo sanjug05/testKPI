@@ -475,6 +475,7 @@
 
 <div id="toastContainer" class="toast-container" aria-live="assertive"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, doc, onSnapshot, updateDoc, getDoc, getDocs, serverTimestamp, setDoc, addDoc, query, orderBy, limit, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1065,19 +1066,19 @@ async function renderCharts(){await registerChartPlugins();const enriched=getEnr
  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
  const themeColor=getComputedStyle(document.documentElement).getPropertyValue('--blue').trim()||'#0D5E3A';
  const ctxBar=document.getElementById("barPlanActualChart")?.getContext("2d");if(ctxBar){if(barChart)barChart.destroy();barChart=new Chart(ctxBar,{type:"bar",data:{labels,datasets:[{label:"Plan",data:enriched.map(k=>k.yearlyPlan),backgroundColor:"#c5d9ec",borderRadius:6},{label:"Actual",data:enriched.map(k=>k.metrics.yearlyActual),backgroundColor:themeColor,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"top"}}}});}
- const ctxH=document.getElementById("horizontalAchievementChart")?.getContext("2d");if(ctxH){if(horizChart)horizChart.destroy();horizChart=new Chart(ctxH,{type:"bar",data:{labels,datasets:[{label:"%",data:enriched.map(k=>parseFloat(fmt(k.metrics.yearlyPct,1))),backgroundColor:enriched.map(k=>k.metrics.status==="green"?"#2b9e5c":k.metrics.status==="amber"?"#e68a2e":"#dc5a3c"),borderRadius:6}]},options:{
-  indexAxis:"y",
-  responsive:true,
+ const ctxH=document.getElementById("horizontalAchievementChart")?.getContext("2d");if(ctxH){if(horizChart)horizChart.destroy();horizChart=new Chart(ctxH,{type:"bar",data:{labels,datasets:[{label:"%",data:enriched.map(k=>parseFloat(fmt(k.metrics.yearlyPct,1))),backgroundColor:enriched.map(k=>k.metrics.status==="green"?"#2b9e5c":k.metrics.status==="amber"?"#e68a2e":"#dc5a3c"),borderRadius:6}]},options: {
+  indexAxis: "y",
+  responsive: true,
 
-  plugins:{
-    legend:{display:false}
+  plugins: {
+    legend: { display: false }
   },
 
-  scales:{
-    x:{
-      max:110,
-      ticks:{
-        callback:function(value){
+  scales: {
+    x: {
+      max: 110,
+      ticks: {
+        callback: function(value) {
           return Number.isInteger(value) ? value : value.toFixed(1);
         }
       }
