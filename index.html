@@ -1066,25 +1066,7 @@ async function renderCharts(){await registerChartPlugins();const enriched=getEnr
  Chart.defaults.font.family="'Inter', system-ui, sans-serif";
  const themeColor=getComputedStyle(document.documentElement).getPropertyValue('--blue').trim()||'#0D5E3A';
  const ctxBar=document.getElementById("barPlanActualChart")?.getContext("2d");if(ctxBar){if(barChart)barChart.destroy();barChart=new Chart(ctxBar,{type:"bar",data:{labels,datasets:[{label:"Plan",data:enriched.map(k=>k.yearlyPlan),backgroundColor:"#c5d9ec",borderRadius:6},{label:"Actual",data:enriched.map(k=>k.metrics.yearlyActual),backgroundColor:themeColor,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"top"}}}});}
- const ctxH=document.getElementById("horizontalAchievementChart")?.getContext("2d");if(ctxH){if(horizChart)horizChart.destroy();horizChart=new Chart(ctxH,{type:"bar",data:{labels,datasets:[{label:"%",data:enriched.map(k=>parseFloat(fmt(k.metrics.yearlyPct,1))),backgroundColor:enriched.map(k=>k.metrics.status==="green"?"#2b9e5c":k.metrics.status==="amber"?"#e68a2e":"#dc5a3c"),borderRadius:6}]},options: {
-  indexAxis: "y",
-  responsive: true,
-
-  plugins: {
-    legend: { display: false }
-  },
-
-  scales: {
-    x: {
-      max: 110,
-      ticks: {
-        callback: function(value) {
-          return Number.isInteger(value) ? value : value.toFixed(1);
-        }
-      }
-    }
-  }
-}
+ const ctxH=document.getElementById("horizontalAchievementChart")?.getContext("2d");if(ctxH){if(horizChart)horizChart.destroy();horizChart=new Chart(ctxH,{type:"bar",data:{labels,datasets:[{label:"%",data:enriched.map(k=>parseFloat(fmt(k.metrics.yearlyPct,1))),backgroundColor:enriched.map(k=>k.metrics.status==="green"?"#2b9e5c":k.metrics.status==="amber"?"#e68a2e":"#dc5a3c"),borderRadius:6}]},options:{indexAxis:"y",responsive:true,plugins:{legend:{display:false}},scales:{x:{max:110}}}});}
  const cgd=[];
  const catOrder = kpiCategories ? Object.keys(kpiCategories) : ['sales','operations','quality','finance'];
  catOrder.forEach(key=>{
