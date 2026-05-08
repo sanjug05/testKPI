@@ -8,7 +8,8 @@ export const AUTH_CONTEXTS = {
 };
 
 export const buildSecurityPrincipal = ({ user, profile = {}, viewOnly = false } = {}) => ({
-  uid: user?.uid || profile.uid || 'view-only',
+  uid: user?.uid || profile.uid || (viewOnly ? 'view-only' : null),
+  authenticated: Boolean(user?.uid || profile.uid),
   role: profile.role || DEFAULT_ROLE,
   claims: profile.claims || {},
   viewOnly,
@@ -18,7 +19,7 @@ export const buildSecurityPrincipal = ({ user, profile = {}, viewOnly = false } 
 });
 
 export const canAccessPermission = (principal, permission = PERMISSIONS.DASHBOARD_READ) => (
-  Boolean(principal?.viewOnly || principal?.uid) && hasPermission(principal.role, permission)
+  Boolean(principal?.viewOnly || principal?.authenticated) && hasPermission(principal.role, permission)
 );
 
 export const enforceRouteAccess = (principal, permission) => ({

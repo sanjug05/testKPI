@@ -1,10 +1,11 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import StrategicAnalyticsDashboard from '../components/Analytics/StrategicAnalyticsDashboard';
 import ExecutiveOverview from '../components/Executive/ExecutiveOverview';
 import ExecutiveIntelligenceLayer from '../components/Executive/ExecutiveIntelligenceLayer';
 import GlobalFilters from '../components/Enterprise/GlobalFilters';
 import Header from '../components/Layout/Header';
 import Sidebar from '../components/Layout/Sidebar';
+import { useLocation, useNavigate } from 'react-router-dom';
 import ActivityTimeline from '../components/Operations/ActivityTimeline';
 import ErrorBoundary from '../components/shared/error/ErrorBoundary';
 import LoadingState from '../components/shared/ui/LoadingState';
@@ -27,6 +28,13 @@ import { enterpriseWorkflowDefinitions } from '../platform/workflow/workflowEngi
 
 const KPIProspectFunnel = lazy(() => import('../features/kpis/prospectFunnel/KPIProspectFunnel'));
 
+const ROUTE_SECTION_IDS = new Set(['overview', 'analytics', 'prospects', 'partners', 'financials', 'quality', 'settings']);
+
+const getSectionFromPath = (pathname) => {
+  const section = pathname.split('/').filter(Boolean)[1];
+  return ROUTE_SECTION_IDS.has(section) ? section : 'overview';
+};
+
 const normalizeRecordForEnterprise = (record) => ({
   ...record,
   ...buildHierarchyMetadata(record),
@@ -35,10 +43,21 @@ const normalizeRecordForEnterprise = (record) => ({
 });
 
 const DashboardPage = () => {
-  const [activeSection, setActiveSection] = useState('overview');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeSection, setActiveSection] = useState(() => getSectionFromPath(location.pathname));
   const { dateRange, setDateRange } = useDateRange();
   const { profile } = useAuth();
   const { filters, queryFilters, setFilter, resetFilters } = useGlobalFilters(profile);
+
+  useEffect(() => {
+    setActiveSection(getSectionFromPath(location.pathname));
+  }, [location.pathname]);
+
+  const handleSectionChange = (sectionId) => {
+    setActiveSection(sectionId);
+    navigate(sectionId === 'overview' ? '/dashboard' : `/dashboard/${sectionId}`);
+  };
 
   const executiveFilters = useMemo(() => ({
     from: dateRange.from,
@@ -89,10 +108,10 @@ const DashboardPage = () => {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gradient-to-br from-navy via-black to-navy text-white md:flex">
-        <Sidebar active={activeSection} onChange={setActiveSection} />
+        <Sidebar active={activeSection} onChange={handleSectionChange} />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-3 pb-4 pt-20 md:p-4">
-          <Header activeSection={activeSection} dateRange={dateRange} setDateRange={setDateRange} onJump={setActiveSection} />
+          <Header activeSection={activeSection} dateRange={dateRange} setDateRange={setDateRange} onJump={handleSectionChange} />
           <main className="flex-1 overflow-y-auto scroll-smooth pb-4">
             <ExecutiveOverview records={executiveRecords} health={health} alerts={alerts} />
             <ExecutiveIntelligenceLayer records={executiveRecords} />

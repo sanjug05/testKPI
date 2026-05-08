@@ -32,3 +32,18 @@ export const enterpriseEnvironment = {
 };
 
 export const isProductionEnvironment = enterpriseEnvironment.environment === ENVIRONMENTS.PRODUCTION;
+
+const PLACEHOLDER_VALUES = new Set([
+  '',
+  'YOUR_API_KEY',
+  'YOUR_AUTH_DOMAIN',
+  'YOUR_PROJECT_ID',
+  'YOUR_STORAGE_BUCKET',
+  'YOUR_MESSAGING_SENDER_ID',
+  'YOUR_APP_ID',
+]);
+
+export const isFirebaseConfigured = (firebaseConfig = enterpriseEnvironment.firebase) => (
+  Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId)
+  && !Object.values(firebaseConfig).some((value) => PLACEHOLDER_VALUES.has(value))
+);
