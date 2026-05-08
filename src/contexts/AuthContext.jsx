@@ -2,8 +2,36 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { buildRoleScopeFilters, getRoleConfig, resolveRoleFromClaims } from '../config/rbac';
+import { isFirebaseConfigured } from '../platform/config/environment';
 
 const AuthContext = createContext(null);
+
+const readStorageValue = (key) => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeStorageValue = (key, value) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures so auth state can still render.
+  }
+};
+
+const removeStorageValue = (key) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures so auth state can still render.
+  }
+};
 
 const parseCustomAttributes = (firebaseUser) => {
   if (!firebaseUser?.reloadUserInfo?.customAttributes) return {};
@@ -19,28 +47,34 @@ const parseCustomAttributes = (firebaseUser) => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [viewOnly, setViewOnly] = useState(
-    () => localStorage.getItem('viewOnlyMode') === 'true',
+    () => readStorageValue('viewOnlyMode') === 'true',
   );
-  const [loading, setLoading] = useState(true);
+  const firebaseConfigured = isFirebaseConfigured();
+  const [loading, setLoading] = useState(firebaseConfigured);
 
   useEffect(() => {
+    if (!firebaseConfigured) {
+      setLoading(false);
+      return undefined;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
 
       if (firebaseUser) {
         setViewOnly(false);
-        localStorage.removeItem('viewOnlyMode');
+        removeStorageValue('viewOnlyMode');
       }
 
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [firebaseConfigured]);
 
   const enableViewOnly = () => {
     setViewOnly(true);
-    localStorage.setItem('viewOnlyMode', 'true');
+    writeStorageValue('viewOnlyMode', 'true');
   };
 
   const logout = async () => {
