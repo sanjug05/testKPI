@@ -1,31 +1,17 @@
-import React, { useState } from 'react';
-import { Award, BarChart3, BrainCircuit, Building2, ChevronLeft, ChevronRight, LayoutDashboard, Settings, Users } from 'lucide-react';
-
-const navGroups = [
-  {
-    label: 'Executive',
-    items: [
-      { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-      { id: 'analytics', label: 'Strategic Analytics', icon: BrainCircuit },
-    ],
-  },
-  {
-    label: 'KPI Modules',
-    items: [
-      { id: 'prospects', label: 'Prospects & CFT', icon: Users },
-      { id: 'partners', label: 'Partners & Showrooms', icon: Building2 },
-      { id: 'financials', label: 'Recoveries', icon: BarChart3 },
-      { id: 'quality', label: 'Audits & Scores', icon: Award },
-    ],
-  },
-  {
-    label: 'Administration',
-    items: [{ id: 'settings', label: 'Settings', icon: Settings }],
-  },
-];
+import React, { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { hasPermission } from '../../config/rbac';
+import { useAuth } from '../../contexts/AuthContext';
+import { enterpriseEnvironment } from '../../platform/config/environment';
+import { getNavigationGroups } from '../../platform/modules/moduleRegistry';
 
 const Sidebar = ({ active, onChange }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const { profile } = useAuth();
+  const navGroups = useMemo(() => Object.values(getNavigationGroups()).map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.permission || hasPermission(profile.role, item.permission)),
+  })).filter((group) => group.items.length > 0), [profile.role]);
 
   return (
     <aside className={`fixed inset-x-0 top-0 z-30 h-auto border-b border-white/10 bg-navy/95 backdrop-blur transition-all duration-300 md:sticky md:inset-auto md:top-0 md:h-screen md:border-b-0 ${collapsed ? 'md:w-20' : 'md:w-64'} glass-effect flex flex-col rounded-none md:rounded-glass`}>
@@ -36,8 +22,8 @@ const Sidebar = ({ active, onChange }) => {
           </div>
           {!collapsed && (
             <div className="hidden md:block">
-              <p className="text-sm text-teal/80">Channel Management</p>
-              <p className="text-xs text-white/70">KPI Dashboard</p>
+              <p className="text-sm text-teal/80">Operations Platform</p>
+              <p className="text-xs text-white/70">Channel Management</p>
             </div>
           )}
         </div>
@@ -75,9 +61,9 @@ const Sidebar = ({ active, onChange }) => {
 
       {!collapsed && (
         <div className="hidden border-t border-white/10 px-4 py-3 text-[11px] text-white/50 md:block">
-          AIS Windows · Channel Management
+          {enterpriseEnvironment.appName}
           <br />
-          Internal KPI monitoring
+          Enterprise operations ecosystem
         </div>
       )}
     </aside>

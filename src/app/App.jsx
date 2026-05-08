@@ -1,32 +1,14 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { PERMISSIONS, hasPermission } from '../config/rbac';
+import { AuthProvider } from '../contexts/AuthContext';
+import { PERMISSIONS } from '../config/rbac';
 import ErrorBoundary from '../components/shared/error/ErrorBoundary';
-import DashboardPage from '../pages/DashboardPage';
+import LoadingState from '../components/shared/ui/LoadingState';
 import LoginPage from '../pages/LoginPage';
+import EnterpriseRouteGuard from '../platform/routing/EnterpriseRouteGuard';
 
-const ProtectedRoute = ({ children, permission = PERMISSIONS.DASHBOARD_READ }) => {
-  const { user, viewOnly, loading, profile } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-navy">
-        <div className="glass-effect px-6 py-4">
-          <div className="animate-spin h-6 w-6 border-2 border-teal border-t-transparent rounded-full mx-auto mb-2" />
-          <p className="text-teal text-sm text-center">Loading dashboard…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if ((viewOnly || user) && hasPermission(profile.role, permission)) {
-    return children;
-  }
-
-  return <Navigate to="/" replace />;
-};
+const DashboardPage = lazy(() => import('../pages/DashboardPage'));
 
 function App() {
   return (
@@ -37,11 +19,13 @@ function App() {
           <Routes>
             <Route path="/" element={<LoginPage />} />
             <Route
-              path="/dashboard"
+              path="/dashboard/*"
               element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
+                <EnterpriseRouteGuard permission={PERMISSIONS.DASHBOARD_READ}>
+                  <Suspense fallback={<section className="min-h-screen bg-navy p-6"><LoadingState message="Loading AIS Operations Platform…" /></section>}>
+                    <DashboardPage />
+                  </Suspense>
+                </EnterpriseRouteGuard>
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />

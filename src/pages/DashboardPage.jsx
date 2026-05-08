@@ -17,6 +17,13 @@ import { useKPIData } from '../hooks/useKPIData';
 import { useEnterpriseNotifications } from '../hooks/notifications/useEnterpriseNotifications';
 import { useTargets } from '../hooks/useTargets';
 import { generateSmartInsights } from '../services/analytics/insightsEngine';
+import { channelManagementModule } from '../modules/channelManagement/moduleDefinition';
+import { enterpriseEnvironment } from '../platform/config/environment';
+import { firestoreSchemaStrategy } from '../platform/data/enterpriseDataArchitecture';
+import { buildInsightMetadata } from '../platform/intelligence/aiReadiness';
+import { getRegisteredModules } from '../platform/modules/moduleRegistry';
+import { reportTemplates } from '../platform/reporting/reportEngine';
+import { enterpriseWorkflowDefinitions } from '../platform/workflow/workflowEngine';
 
 const KPIProspectFunnel = lazy(() => import('../features/kpis/prospectFunnel/KPIProspectFunnel'));
 
@@ -64,6 +71,20 @@ const DashboardPage = () => {
   });
   const insights = useMemo(() => generateSmartInsights(executiveRecords).highlights, [executiveRecords]);
   const alerts = useEnterpriseNotifications({ records: executiveRecords, health, insights });
+  const platformReadiness = useMemo(() => ({
+    modules: getRegisteredModules().length,
+    activeKpiPlugins: channelManagementModule.kpiPlugins.length,
+    workflows: Object.keys(enterpriseWorkflowDefinitions).length,
+    reportTemplates: Object.keys(reportTemplates).length,
+    schemaVersion: firestoreSchemaStrategy.version,
+    aiMetadata: buildInsightMetadata({
+      moduleId: 'channelManagement',
+      kpiKey: 'prospectFunnel',
+      filters: executiveFilters,
+      dimensions: ['region', 'territory', 'source', 'status'],
+      recordCount: executiveRecords.length,
+    }),
+  }), [executiveFilters, executiveRecords.length]);
 
   return (
     <ErrorBoundary>
@@ -100,6 +121,30 @@ const DashboardPage = () => {
               )}
 
               <ActivityTimeline records={executiveRecords} />
+
+              <section className="glass-effect border border-teal/20 p-4">
+                <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-teal">Enterprise platform ecosystem readiness</h3>
+                    <p className="text-xs text-white/60">{enterpriseEnvironment.appName} core services are registered without changing KPI business logic.</p>
+                  </div>
+                  <span className="text-[11px] text-white/45">{platformReadiness.schemaVersion}</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ['Registered modules', platformReadiness.modules],
+                    ['Active KPI plugins', platformReadiness.activeKpiPlugins],
+                    ['Workflow definitions', platformReadiness.workflows],
+                    ['Report templates', platformReadiness.reportTemplates],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-white/40">{label}</p>
+                      <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] text-white/45">AI metadata contract: {platformReadiness.aiMetadata.schemaVersion} · redaction-ready aggregate context.</p>
+              </section>
 
               <section className="glass-effect border border-dashed border-teal/30 p-4">
                 <h3 className="text-sm font-semibold text-teal mb-2">Future enterprise readiness backlog</h3>

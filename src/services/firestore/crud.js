@@ -4,6 +4,8 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit as firestoreLimit,
+  onSnapshot,
   orderBy,
   query,
   updateDoc,
@@ -18,12 +20,13 @@ const getCollectionRef = (collectionKey) => {
   return collection(db, config.path);
 };
 
-const buildQueryConstraints = (filters, config) => {
+export const buildQueryConstraints = (filters = {}, config) => {
   const order = filters.orderBy || config.defaultOrder;
   const whereFilters = buildFirestoreWhereFilters(filters, filters.dateField || config.dateField);
   const constraints = whereFilters.map((filter) => where(filter.field, filter.operator, filter.value));
 
   if (order) constraints.push(orderBy(order.field, order.direction || 'asc'));
+  if (filters.limit) constraints.push(firestoreLimit(filters.limit));
 
   return constraints;
 };
@@ -55,6 +58,21 @@ export const updateDocument = async (collectionKey, id, patch) => {
   await updateDoc(ref, patch);
 };
 
+export const listenCollection = (collectionKey, filters = {}, onData, onError) => {
+  const config = getCollectionConfig(collectionKey);
+  const colRef = getCollectionRef(collectionKey);
+  const queryConstraints = buildQueryConstraints(filters, config);
+  const q = queryConstraints.length ? query(colRef, ...queryConstraints) : query(colRef);
+
+  return onSnapshot(q, (snapshot) => {
+    const records = normalizeSnapshot(snapshot);
+    onData(applyClientFilters(records, {
+      ...filters,
+      dateField: filters.dateField || config.dateField,
+    }));
+  }, onError);
+};
+
 export const deleteDocument = async (collectionKey, id) => {
   const config = getCollectionConfig(collectionKey);
   const ref = doc(db, config.path, id);
@@ -66,4 +84,5 @@ export const createCrudRepository = (collectionKey) => ({
   create: (record) => createDocument(collectionKey, record),
   update: (id, patch) => updateDocument(collectionKey, id, patch),
   remove: (id) => deleteDocument(collectionKey, id),
+  listen: (filters, onData, onError) => listenCollection(collectionKey, filters, onData, onError),
 });
