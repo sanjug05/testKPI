@@ -5,6 +5,9 @@ import FilterBar from '../../../components/shared/ui/FilterBar';
 import ProspectFunnelChart from '../../../components/Charts/ProspectFunnelChart';
 import InsightCards from '../../../components/Enterprise/InsightCards';
 import ActionButton from '../../../components/shared/ui/ActionButton';
+import AlertBanner from '../../../components/shared/ui/AlertBanner';
+import ConfirmDialog from '../../../components/shared/ui/ConfirmDialog';
+import StatusBadge from '../../../components/shared/ui/StatusBadge';
 import { PERMISSIONS } from '../../../config/rbac';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useFilters } from '../../../hooks/useFilters';
@@ -47,6 +50,7 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
   const [editingId, setEditingId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [form, setForm] = useState(INITIAL_PROSPECT_FORM);
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const dataFilters = useMemo(() => ({
     from: dateRange.from,
@@ -60,7 +64,7 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
     salesperson: globalFilters.salesperson,
   }), [dateRange.from, dateRange.to, filters.source, globalFilters, lockedSourceFilter]);
 
-  const { loading, records, reload, repository } = useKPIData({
+  const { loading, error, records, reload, repository } = useKPIData({
     collectionKey: 'prospectFunnel',
     filters: dataFilters,
     errorMessage: 'Failed to load prospect funnel data',
@@ -70,7 +74,7 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
   const { funnel, summaryCards } = useMemo(() => calculateProspectFunnelMetrics(enterpriseRecords), [enterpriseRecords]);
   const insights = useMemo(() => buildProspectInsights(enterpriseRecords), [enterpriseRecords]);
   const periodKey = dateRange.from?.slice(0, 7);
-  const { targetValue, health } = useTargets({
+  const { targetValue, achievementPercentage, health } = useTargets({
     kpiKey: 'prospectFunnel',
     periodType: 'monthly',
     periodKey,
@@ -147,11 +151,16 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
 
   const handleDelete = async (id) => {
     if (!canWrite(PERMISSIONS.KPI_DELETE)) return;
-    if (!window.confirm('Delete this prospect entry?')) return;
+    setPendingDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
 
     try {
-      await repository.remove(id);
+      await repository.remove(pendingDeleteId);
       toast.success('Deleted');
+      setPendingDeleteId(null);
       await reload();
     } catch (error) {
       console.error(error);
@@ -174,6 +183,18 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
       description="Track all prospects showing interest and funnel conversion from Interested → Converted with hierarchy, targets, health, exports, and audit metadata."
       toolbar={exportToolbar}
     >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <StatusBadge tone={health.atRisk ? 'danger' : 'success'}>Health: {health.status}</StatusBadge>
+        <StatusBadge tone="info">Achievement: {achievementPercentage}%</StatusBadge>
+        {health.overdue && <StatusBadge tone="warning">Overdue target</StatusBadge>}
+      </div>
+
+      {error && (
+        <AlertBanner tone="danger">
+          Firestore query failed gracefully. <button type="button" onClick={reload} className="ml-1 underline">Retry loading prospect funnel</button>
+        </AlertBanner>
+      )}
+
       <InsightCards insights={insights} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -202,6 +223,15 @@ const KPIProspectFunnel = ({ dateRange, globalFilters = {} }) => {
           onDelete={handleDelete}
         />
       </div>
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteId)}
+        title="Delete prospect entry?"
+        message="This removes the KPI record from the operational funnel. Audit metadata remains available in future activity logs."
+        confirmLabel="Delete entry"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </KPIContainer>
   );
 };

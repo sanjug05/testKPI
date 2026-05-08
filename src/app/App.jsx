@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { PERMISSIONS, hasPermission } from '../config/rbac';
+import ErrorBoundary from '../components/shared/error/ErrorBoundary';
 import DashboardPage from '../pages/DashboardPage';
 import LoginPage from '../pages/LoginPage';
 
@@ -30,21 +31,23 @@ const ProtectedRoute = ({ children, permission = PERMISSIONS.DASHBOARD_READ }) =
 function App() {
   return (
     <AuthProvider>
-      <Toaster position="top-right" />
-      <Router>
-        <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
+      <Toaster position="top-right" toastOptions={{ className: '!bg-navy !text-white !border !border-teal/30' }} />
+      <ErrorBoundary>
+        <Router>
+          <Routes>
+            <Route path="/" element={<LoginPage />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </ErrorBoundary>
     </AuthProvider>
   );
 }
