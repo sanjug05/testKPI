@@ -4,7 +4,7 @@ import { CalendarRange, User2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Header = ({ dateRange, setDateRange }) => {
-  const { user, viewOnly, logout } = useAuth();
+  const { user, viewOnly, profile, logout } = useAuth();
   const today = format(new Date(), 'dd MMM yyyy');
 
   return (
@@ -43,7 +43,7 @@ const Header = ({ dateRange, setDateRange }) => {
           </div>
           <div className="text-xs">
             <div className="text-white/90">{user?.email || 'View Only User'}</div>
-            <div className="text-teal/70">{viewOnly ? 'Read-only mode' : 'Channel Manager'}</div>
+            <div className="text-teal/70">{viewOnly ? 'Read-only mode' : profile.roleLabel}</div>
           </div>
           {!viewOnly && user && (
             <button type="button" onClick={logout} className="ml-2 text-[11px] text-teal hover:text-gold">

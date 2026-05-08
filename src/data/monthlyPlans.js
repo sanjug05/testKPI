@@ -1,7 +1,15 @@
-export const shortlistedPlan = {
-  '2025-10': 18,
-  '2025-11': 20,
-  '2025-12': 22,
+export const targetCollectionSchema = {
+  collection: 'ch_target_configs',
+  requiredFields: [
+    'kpiKey',
+    'periodType',
+    'periodKey',
+    'periodStart',
+    'periodEnd',
+    'targetValue',
+    'territory',
+    'role',
+  ],
 };
 
-// TODO: Add enterprise KPI target plans for KPI 3–16 once their modules are stabilized.
+// Static monthly plan objects were removed in Phase 3. Targets are now loaded from Firestore through useTargets().
