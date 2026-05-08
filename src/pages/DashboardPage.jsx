@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import OverviewCards from '../components/Dashboard/OverviewCards';
 import Header from '../components/Layout/Header';
 import Sidebar from '../components/Layout/Sidebar';
-import KPIProspectFunnel from '../components/KPICards/KPIProspectFunnel';
+import LoadingState from '../components/shared/ui/LoadingState';
+import { useDateRange } from '../hooks/useDateRange';
+
+const KPIProspectFunnel = lazy(() => import('../features/kpis/prospectFunnel/KPIProspectFunnel'));
 
 const DashboardPage = () => {
   const [activeSection, setActiveSection] = useState('overview');
-  const [dateRange, setDateRange] = useState({ from: '2025-10-01', to: '2025-12-31' });
+  const { dateRange, setDateRange } = useDateRange();
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-navy via-black to-navy text-white">
@@ -18,13 +21,17 @@ const DashboardPage = () => {
           <OverviewCards />
 
           <div className="space-y-4">
-            {(activeSection === 'overview' || activeSection === 'prospects') && <KPIProspectFunnel dateRange={dateRange} />}
+            {(activeSection === 'overview' || activeSection === 'prospects') && (
+              <Suspense fallback={<section className="glass-effect p-4"><LoadingState message="Loading KPI module…" /></section>}>
+                <KPIProspectFunnel dateRange={dateRange} />
+              </Suspense>
+            )}
 
             {activeSection !== 'overview' && activeSection !== 'prospects' && (
               <section className="glass-effect p-4">
                 <h3 className="text-sm font-semibold text-teal mb-2">KPI module stabilization pending</h3>
                 <p className="text-xs text-white/60">
-                  TODO: Re-enable this KPI section after its fragmented component, Firestore collection, and chart logic are separated and verified.
+                  TODO: Mount this KPI with KPIContainer, KPISummaryCards, KPIChartSection, KPIFormSection, and KPITableSection after its collection contract is verified.
                 </p>
               </section>
             )}
@@ -32,7 +39,7 @@ const DashboardPage = () => {
             <section className="glass-effect p-4 border border-dashed border-teal/30">
               <h3 className="text-sm font-semibold text-teal mb-2">KPI 2–16 stabilization backlog</h3>
               <p className="text-xs text-white/60">
-                TODO: Preserve and remount remaining KPI business logic incrementally after authentication, dashboard shell, sidebar, header, overview cards, and KPI Prospect Funnel remain stable.
+                TODO: Preserve and remount remaining KPI business logic incrementally through the shared enterprise KPI architecture, centralized Firestore layer, and reusable hooks.
               </p>
             </section>
           </div>
