@@ -1,5 +1,7 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
+import StrategicAnalyticsDashboard from '../components/Analytics/StrategicAnalyticsDashboard';
 import ExecutiveOverview from '../components/Executive/ExecutiveOverview';
+import ExecutiveIntelligenceLayer from '../components/Executive/ExecutiveIntelligenceLayer';
 import GlobalFilters from '../components/Enterprise/GlobalFilters';
 import Header from '../components/Layout/Header';
 import Sidebar from '../components/Layout/Sidebar';
@@ -14,7 +16,7 @@ import { useGlobalFilters } from '../hooks/useGlobalFilters';
 import { useKPIData } from '../hooks/useKPIData';
 import { useEnterpriseNotifications } from '../hooks/notifications/useEnterpriseNotifications';
 import { useTargets } from '../hooks/useTargets';
-import { buildProspectInsights } from '../utils/insights';
+import { generateSmartInsights } from '../services/analytics/insightsEngine';
 
 const KPIProspectFunnel = lazy(() => import('../features/kpis/prospectFunnel/KPIProspectFunnel'));
 
@@ -60,7 +62,7 @@ const DashboardPage = () => {
     role: profile.role,
     achievement: funnel.converted,
   });
-  const insights = useMemo(() => buildProspectInsights(executiveRecords), [executiveRecords]);
+  const insights = useMemo(() => generateSmartInsights(executiveRecords).highlights, [executiveRecords]);
   const alerts = useEnterpriseNotifications({ records: executiveRecords, health, insights });
 
   return (
@@ -72,6 +74,7 @@ const DashboardPage = () => {
           <Header activeSection={activeSection} dateRange={dateRange} setDateRange={setDateRange} onJump={setActiveSection} />
           <main className="flex-1 overflow-y-auto scroll-smooth pb-4">
             <ExecutiveOverview records={executiveRecords} health={health} alerts={alerts} />
+            <ExecutiveIntelligenceLayer records={executiveRecords} />
             {executiveLoading && <section className="glass-effect mb-4 p-4"><LoadingState message="Refreshing executive snapshot…" /></section>}
 
             <div className="sticky top-[150px] z-10 md:top-[112px]">
@@ -79,15 +82,17 @@ const DashboardPage = () => {
             </div>
 
             <div className="space-y-4">
+              {activeSection === 'analytics' && <StrategicAnalyticsDashboard records={executiveRecords} />}
+
               {(activeSection === 'overview' || activeSection === 'prospects') && (
                 <Suspense fallback={<section className="glass-effect p-4"><LoadingState message="Loading KPI module…" /></section>}>
                   <KPIProspectFunnel dateRange={dateRange} globalFilters={queryFilters} />
                 </Suspense>
               )}
 
-              {activeSection !== 'overview' && activeSection !== 'prospects' && (
+              {activeSection !== 'overview' && activeSection !== 'prospects' && activeSection !== 'analytics' && (
                 <section className="glass-effect p-4">
-                  <h3 className="text-sm font-semibold text-teal mb-2">KPI module stabilization pending</h3>
+                  <h3 className="text-sm font-semibold text-teal mb-2">Operational workflow readiness pending</h3>
                   <p className="text-xs text-white/60">
                     TODO: Mount this KPI with the standardized enterprise module contract: KPI header, summary cards, charts, filters, forms, tables, export actions, health status, insights, loading, empty, error, and retry states.
                   </p>
@@ -99,7 +104,7 @@ const DashboardPage = () => {
               <section className="glass-effect border border-dashed border-teal/30 p-4">
                 <h3 className="text-sm font-semibold text-teal mb-2">Future enterprise readiness backlog</h3>
                 <p className="text-xs text-white/60">
-                  TODO: Add approval workflows, AI-generated insights, predictive analytics, incentive engine, partner lifecycle scoring, workflow automation, task assignment, notification center, and multi-business support on top of this Phase 4 product maturity foundation.
+                  TODO: Connect approval workflows, scheduled executive reports, AI-generated recommendations, predictive operations models, partner master data, workflow automation, task routing, and multi-business expansion support on top of this Phase 5 intelligence foundation.
                 </p>
               </section>
             </div>
