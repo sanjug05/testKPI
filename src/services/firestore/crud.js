@@ -7,24 +7,37 @@ import {
   orderBy,
   query,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { getCollectionConfig } from '../../config/firestoreCollections';
 import { db } from '../firebase';
-import { applyClientFilters, normalizeSnapshot } from './queryHelpers';
+import { applyClientFilters, buildFirestoreWhereFilters, normalizeSnapshot } from './queryHelpers';
 
 const getCollectionRef = (collectionKey) => {
   const config = getCollectionConfig(collectionKey);
   return collection(db, config.path);
 };
 
+const buildQueryConstraints = (filters, config) => {
+  const order = filters.orderBy || config.defaultOrder;
+  const whereFilters = buildFirestoreWhereFilters(filters, filters.dateField || config.dateField);
+  const constraints = whereFilters.map((filter) => where(filter.field, filter.operator, filter.value));
+
+  if (order) constraints.push(orderBy(order.field, order.direction || 'asc'));
+
+  return constraints;
+};
+
 export const fetchCollection = async (collectionKey, filters = {}) => {
   const config = getCollectionConfig(collectionKey);
-  const order = filters.orderBy || config.defaultOrder;
   const colRef = getCollectionRef(collectionKey);
-  const q = order ? query(colRef, orderBy(order.field, order.direction || 'asc')) : query(colRef);
+  const queryConstraints = buildQueryConstraints(filters, config);
+  const q = queryConstraints.length ? query(colRef, ...queryConstraints) : query(colRef);
   const snapshot = await getDocs(q);
   const records = normalizeSnapshot(snapshot);
 
+  // Firestore receives all supported equality/date constraints above. This remains as a safety net for
+  // derived UI-only filters and prepares the repository contract for future pagination cursors.
   return applyClientFilters(records, {
     ...filters,
     dateField: filters.dateField || config.dateField,

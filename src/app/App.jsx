@@ -2,11 +2,12 @@ import React from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { PERMISSIONS, hasPermission } from '../config/rbac';
 import DashboardPage from '../pages/DashboardPage';
 import LoginPage from '../pages/LoginPage';
 
-const ProtectedRoute = ({ children }) => {
-  const { user, viewOnly, loading } = useAuth();
+const ProtectedRoute = ({ children, permission = PERMISSIONS.DASHBOARD_READ }) => {
+  const { user, viewOnly, loading, profile } = useAuth();
 
   if (loading) {
     return (
@@ -19,7 +20,7 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  if (viewOnly || user) {
+  if ((viewOnly || user) && hasPermission(profile.role, permission)) {
     return children;
   }
 

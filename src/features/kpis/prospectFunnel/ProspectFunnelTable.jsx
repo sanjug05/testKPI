@@ -4,7 +4,7 @@ import ActionButton from '../../../components/shared/ui/ActionButton';
 import KPITableSection from '../components/KPITableSection';
 import { PROSPECT_FUNNEL_TABLE_COLUMNS } from './prospectFunnelConfig';
 
-const ProspectFunnelTable = ({ loading, records, readOnly, onEdit, onDelete }) => (
+const ProspectFunnelTable = ({ loading, records, readOnly, canEdit = false, canDelete = false, onEdit, onDelete }) => (
   <KPITableSection
     columns={PROSPECT_FUNNEL_TABLE_COLUMNS}
     records={records}
@@ -16,14 +16,17 @@ const ProspectFunnelTable = ({ loading, records, readOnly, onEdit, onDelete }) =
         <td className="px-2 py-1">{record.source}</td>
         <td className="px-2 py-1">{record.prospectName}</td>
         <td className="px-2 py-1">{record.company}</td>
+        <td className="px-2 py-1">{record.region || record.zone}</td>
+        <td className="px-2 py-1">{record.state}</td>
+        <td className="px-2 py-1">{record.territory}</td>
         <td className="px-2 py-1">{record.contact}</td>
         <td className="px-2 py-1"><span className="px-2 py-0.5 rounded-full bg-white/5 text-[10px]">{record.status}</span></td>
         <td className="px-2 py-1">{record.salesperson}</td>
         <td className="px-2 py-1 text-right space-x-1">
-          {!readOnly && (
+          {!readOnly && (canEdit || canDelete) && (
             <>
-              <ActionButton variant="link" className="inline-flex" onClick={() => onEdit(record)}>Edit</ActionButton>
-              <ActionButton variant="danger" className="inline-flex" onClick={() => onDelete(record.id)}>Del</ActionButton>
+              {canEdit && <ActionButton variant="link" className="inline-flex" onClick={() => onEdit(record)}>Edit</ActionButton>}
+              {canDelete && <ActionButton variant="danger" className="inline-flex" onClick={() => onDelete(record.id)}>Del</ActionButton>}
             </>
           )}
         </td>
