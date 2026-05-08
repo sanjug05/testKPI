@@ -1,3 +1,5 @@
+import { buildAnalyticsSnapshotReport, preparePresentationExportRows } from '../services/reporting/reportingEngine';
+
 const downloadBlob = (content, filename, type) => {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -24,3 +26,18 @@ export const exportToPdf = ({ title, columns, records }) => {
   printable.document.close();
   printable.print();
 };
+
+export const exportAnalyticsSnapshot = ({ records = [], role, filters, filename = 'ais-analytics-snapshot' }) => {
+  const snapshot = buildAnalyticsSnapshotReport({ records, role, filters });
+  const rows = preparePresentationExportRows(snapshot).map(([label, value]) => `${escapeCell(label)},${escapeCell(value)}`);
+  const insightRows = snapshot.analytics.highlights.map((insight) => `${escapeCell(insight.label)},${escapeCell(insight.value)},${escapeCell(insight.detail)}`);
+  downloadBlob([
+    'Section,Value,Detail',
+    ...rows,
+    '',
+    'Insight,Value,Detail',
+    ...insightRows,
+  ].join('\n'), `${filename}.csv`, 'text/csv;charset=utf-8;');
+};
+
+// TODO: Add scheduled report subscriptions and executive email summary delivery from the reusable reporting engine.

@@ -1,3 +1,5 @@
+import { ENTERPRISE_THRESHOLDS } from './enterpriseConfig';
+
 export const KPI_HEALTH_STATUS = {
   GREEN: 'Green',
   AMBER: 'Amber',
@@ -8,6 +10,9 @@ export const KPI_HEALTH_STATUS = {
 export const KPI_THRESHOLDS = {
   default: { green: 90, amber: 70, red: 40 },
   prospectFunnel: { green: 90, amber: 70, red: 40 },
+  conversionRate: ENTERPRISE_THRESHOLDS.conversionRate,
+  onboardingVelocity: ENTERPRISE_THRESHOLDS.onboardingVelocity,
+  confidence: ENTERPRISE_THRESHOLDS.confidence,
 };
 
 export const getKpiHealth = (achievementPercentage = 0, kpiKey = 'default') => {

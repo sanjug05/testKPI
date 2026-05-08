@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Award, BarChart3, Building2, ChevronLeft, ChevronRight, LayoutDashboard, Settings, Users } from 'lucide-react';
+import { Award, BarChart3, BrainCircuit, Building2, ChevronLeft, ChevronRight, LayoutDashboard, Settings, Users } from 'lucide-react';
 
 const navGroups = [
   {
     label: 'Executive',
-    items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }],
+    items: [
+      { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      { id: 'analytics', label: 'Strategic Analytics', icon: BrainCircuit },
+    ],
   },
   {
     label: 'KPI Modules',
