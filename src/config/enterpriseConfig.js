@@ -70,3 +70,21 @@ export const AI_READINESS_CONFIG = {
 };
 
 // TODO: Externalize these configs into a Firestore-backed admin console when enterprise governance is enabled.
+
+export const ENTERPRISE_PLATFORM_CONFIG = {
+  platformName: 'AIS Operations Platform',
+  currentBusinessDomain: 'channelManagement',
+  architectureVersion: 'phase6-platformization-v1',
+  moduleStrategy: 'Domain-driven modules register navigation, KPI plugins, routing, data contracts, workflows, reports, and governance metadata independently.',
+  supportedFutureBusinesses: [
+    'experienceCenterManagement',
+    'dealerLifecycle',
+    'recoveryManagement',
+    'incentiveManagement',
+    'architectEngagement',
+    'auditGovernance',
+    'serviceOperations',
+    'leadManagement',
+    'salesOperations',
+  ],
+};

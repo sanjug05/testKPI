@@ -1,7 +1,7 @@
 export const isFilterActive = (value) => value !== undefined && value !== null && value !== '' && value !== 'All';
 
 export const buildFirestoreWhereFilters = (filters = {}, dateField = 'date') => {
-  const { from, to, orderBy, dateField: ignoredDateField, roleScope, ...fieldFilters } = filters;
+  const { from, to, orderBy, dateField: ignoredDateField, roleScope, limit, cursor, ...fieldFilters } = filters;
   const constraints = [];
 
   if (from) constraints.push({ field: dateField, operator: '>=', value: from });
@@ -19,7 +19,7 @@ export const buildFirestoreWhereFilters = (filters = {}, dateField = 'date') => 
 };
 
 export const applyClientFilters = (records, filters = {}) => {
-  const { from, to, dateField = 'date', roleScope, orderBy, ...fieldFilters } = filters;
+  const { from, to, dateField = 'date', roleScope, orderBy, limit, cursor, ...fieldFilters } = filters;
 
   return records.filter((record) => {
     if (from && record[dateField] < from) return false;
