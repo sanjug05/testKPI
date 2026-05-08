@@ -3,4 +3,16 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          charts: ['recharts'],
+          vendor: ['date-fns', 'lucide-react', 'react-hot-toast', 'zustand'],
+        },
+      },
+    },
+  },
 });

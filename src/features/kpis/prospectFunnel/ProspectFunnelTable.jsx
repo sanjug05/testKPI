@@ -10,8 +10,9 @@ const ProspectFunnelTable = ({ loading, records, readOnly, canEdit = false, canD
     records={records}
     loading={loading}
     emptyMessage="No prospect data in this period. Use the form to add sample entries (disabled in View Only mode)."
+    filename="prospect-funnel-table"
     renderRow={(record) => (
-      <tr key={record.id} className="bg-white/5">
+      <tr key={record.id} className="bg-white/5 transition hover:bg-teal/10">
         <td className="px-2 py-1">{record.date ? format(new Date(record.date), 'dd-MMM') : ''}</td>
         <td className="px-2 py-1">{record.source}</td>
         <td className="px-2 py-1">{record.prospectName}</td>
